@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Expense Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:       #f5f3ef;
+    --surface:  #ffffff;
+    --surface2: #f0ede8;
+    --text:     #1a1814;
+    --text2:    #6b6760;
+    --text3:    #a09d98;
+    --border:   rgba(0,0,0,0.09);
+    --border2:  rgba(0,0,0,0.16);
+    --green:    #2d7a4f;
+    --green-bg: #eaf4ee;
+    --red:      #c0392b;
+    --red-bg:   #fdecea;
+    --amber:    #9a6c00;
+    --amber-bg: #fdf3dc;
+    --blue:     #1a5fa8;
+    --blue-bg:  #e8f0fb;
+    --purple:   #5b4fcf;
+    --purple-bg:#f0effe;
+    --accent:   #2d7a4f;
+    --r:        10px;
+    --r-sm:     7px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:        #141412;
+      --surface:   #1e1d1b;
+      --surface2:  #272521;
+      --text:      #f0ede8;
+      --text2:     #9a9590;
+      --text3:     #5a5752;
+      --border:    rgba(255,255,255,0.08);
+      --border2:   rgba(255,255,255,0.14);
+      --green:     #4caf78;
+      --green-bg:  #0f2a1c;
+      --red:       #e05a4e;
+      --red-bg:    #2a0f0d;
+      --amber:     #d4a832;
+      --amber-bg:  #2a1f08;
+      --blue:      #5b9de8;
+      --blue-bg:   #0e1f3a;
+      --purple:    #8b82f0;
+      --purple-bg: #1a1740;
+      --accent:    #4caf78;
+    }
+  }
+  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 15px; line-height: 1.5; }
+
+  .topbar { background: var(--surface); border-bottom: 0.5px solid var(--border2); padding: 0 1.5rem; height: 54px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 20; }
+  .topbar-brand { font-size: 15px; font-weight: 600; letter-spacing: -0.3px; }
+  .sync-pill { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text3); background: var(--surface2); padding: 4px 10px; border-radius: 20px; }
+  .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text3); flex-shrink: 0; }
+  .sync-dot.on   { background: var(--green); }
+  .sync-dot.busy { background: var(--amber); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .btn { padding: 8px 14px; font-size: 13px; font-family: inherit; border: 0.5px solid var(--border2); border-radius: var(--r-sm); cursor: pointer; background: var(--surface); color: var(--text); transition: background 0.15s, opacity 0.15s; font-weight: 500; }
+  .btn:hover { background: var(--surface2); }
+  .btn-primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .btn-primary:hover { opacity: 0.82; }
+  .btn-danger { color: var(--red); border-color: rgba(192,57,43,0.25); background: transparent; }
+  .btn-danger:hover { background: var(--red-bg); }
+  .btn-sm { padding: 4px 9px; font-size: 12px; }
+  .btn-link { background: none; border: none; padding: 0; color: var(--blue); font-size: 13px; cursor: pointer; font-family: inherit; text-decoration: underline; }
+
+  .container { max-width: 820px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+
+  .fullscreen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 70vh; text-align: center; gap: 1rem; padding: 2rem; }
+  .setup-card { background: var(--surface); border: 0.5px solid var(--border2); border-radius: var(--r); padding: 2rem; width: 100%; max-width: 480px; text-align: left; }
+  .setup-card h2 { font-size: 18px; font-weight: 600; margin-bottom: 0.5rem; }
+  .setup-card p  { font-size: 14px; color: var(--text2); margin-bottom: 1.25rem; line-height: 1.6; }
+  .notice { background: var(--blue-bg); border: 0.5px solid rgba(26,95,168,0.2); border-radius: var(--r-sm); padding: 10px 14px; font-size: 13px; color: var(--blue); margin-bottom: 1.25rem; line-height: 1.5; }
+
+  .tab-bar { display: flex; gap: 4px; margin-bottom: 1.25rem; background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--r); padding: 4px; }
+  .tab { padding: 7px 10px; border-radius: 7px; border: none; font-size: 13px; font-family: inherit; cursor: pointer; background: transparent; color: var(--text2); font-weight: 500; transition: all 0.15s; flex: 1; text-align: center; white-space: nowrap; }
+  .tab.active { background: var(--surface2); color: var(--text); border: 0.5px solid var(--border2); }
+
+  .section { display: none; }
+  .section.active { display: block; }
+
+  .metrics { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; margin-bottom: 1.25rem; }
+  .metrics-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .metric { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--r); padding: 1rem 1.125rem; }
+  .metric-label { font-size: 11px; color: var(--text3); margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .metric-value { font-size: 21px; font-weight: 600; font-family: 'DM Mono', monospace; letter-spacing: -0.5px; }
+  .metric-value.green  { color: var(--green); }
+  .metric-value.red    { color: var(--red); }
+  .metric-value.purple { color: var(--purple); }
+  .metric-sub { font-size: 12px; color: var(--text3); margin-top: 3px; }
+
+  .card { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--r); padding: 1.125rem 1.25rem; margin-bottom: 1rem; }
+  .card-title { font-size: 14px; font-weight: 600; margin-bottom: 1rem; }
+  .card-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+
+  .row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 0.5px solid var(--border); }
+  .row:last-child { border-bottom: none; }
+  .row-name { flex: 1; font-size: 14px; font-weight: 500; }
+  .row-sub  { font-size: 12px; color: var(--text3); font-weight: 400; margin-top: 1px; }
+  .row-amount { font-size: 14px; font-weight: 600; font-family: 'DM Mono', monospace; min-width: 85px; text-align: right; }
+
+  .badge { font-size: 11px; padding: 3px 8px; border-radius: 5px; font-weight: 600; white-space: nowrap; }
+  .badge-fixed  { background: var(--amber-bg);  color: var(--amber); }
+  .badge-var    { background: var(--blue-bg);   color: var(--blue); }
+  .badge-nzd    { background: var(--purple-bg); color: var(--purple); }
+
+  .form-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 1rem; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 110px; }
+  .form-group label { font-size: 11px; color: var(--text2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; }
+  input[type=text], input[type=number], input[type=date], select {
+    padding: 9px 11px; font-size: 14px; font-family: inherit;
+    border: 0.5px solid var(--border2); border-radius: var(--r-sm);
+    background: var(--surface2); color: var(--text); width: 100%; outline: none; transition: border-color 0.15s;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  .edit-amt { width: 95px; font-size: 14px; font-weight: 600; font-family: 'DM Mono', monospace; text-align: right; }
+
+  .income-banner { background: var(--green-bg); border: 0.5px solid rgba(45,122,79,0.25); border-radius: var(--r); padding: 1rem 1.25rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .income-banner label { font-size: 12px; font-weight: 600; color: var(--green); white-space: nowrap; text-transform: uppercase; letter-spacing: 0.4px; }
+  .income-banner input { background: white; border-color: rgba(45,122,79,0.3); max-width: 160px; font-weight: 600; color: var(--green); }
+  .income-banner .fx-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .income-banner .fx-label { font-size: 12px; color: var(--green); }
+
+  .bar-wrap { margin-bottom: 12px; }
+  .bar-labels { display: flex; justify-content: space-between; font-size: 13px; color: var(--text2); margin-bottom: 5px; }
+  .bar-labels span:last-child { font-family: 'DM Mono', monospace; font-size: 12px; }
+  .bar-bg { height: 8px; background: var(--surface2); border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width 0.45s ease; }
+
+  .empty { font-size: 14px; color: var(--text3); padding: 1.25rem 0; text-align: center; }
+
+  .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: var(--r-sm); font-size: 13px; font-weight: 500; opacity: 0; transition: opacity 0.25s; z-index: 100; pointer-events: none; max-width: 300px; }
+  .toast.show { opacity: 1; }
+
+  .spinner { width: 30px; height: 30px; border: 2.5px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 2rem auto; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 600px) {
+    .metrics { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .topbar  { padding: 0 1rem; }
+    .tab     { font-size: 12px; padding: 6px 5px; }
+    .metric-value { font-size: 17px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="topbar-brand">Expense Tracker</span>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span class="sync-pill"><span class="sync-dot" id="sync-dot"></span><span id="sync-label">Not connected</span></span>
+    <button class="btn btn-sm" id="signout-btn" onclick="handleSignOut()" style="display:none">Sign out</button>
+  </div>
+</div>
+
+<!-- SETUP -->
+<div id="screen-setup" style="display:none">
+  <div class="fullscreen">
+    <div class="setup-card">
+      <h2>Welcome to Expense Tracker</h2>
+      <p>Enter your Google credentials below. These are saved only in your browser — never uploaded anywhere.</p>
+      <div class="notice">Your expense data lives in your private Google Sheet. This app is just the interface.</div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label>Client ID</label>
+        <input type="text" id="setup-client-id" placeholder="123456789-abc....apps.googleusercontent.com">
+      </div>
+      <div class="form-group" style="margin-bottom:1.5rem">
+        <label>Sheet ID</label>
+        <input type="text" id="setup-sheet-id" placeholder="Paste the long ID from your Google Sheet URL">
+      </div>
+      <button class="btn btn-primary" style="width:100%;padding:11px" onclick="saveSetup()">Save and continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- AUTH -->
+<div id="screen-auth" style="display:none">
+  <div class="fullscreen">
+    <div class="setup-card" style="text-align:center">
+      <h2 style="margin-bottom:0.75rem">Connect to Google Sheets</h2>
+      <p style="margin-bottom:1.5rem">Sign in with the Google account that owns your Expense Tracker spreadsheet.</p>
+      <button class="btn btn-primary" style="width:100%;padding:12px" onclick="handleAuth()">Sign in with Google</button>
+      <br><br>
+      <button class="btn-link" onclick="showSetup()">Change credentials</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOADING -->
+<div id="screen-loading" style="display:none">
+  <div class="fullscreen">
+    <div class="spinner"></div>
+    <p style="color:var(--text3);font-size:14px" id="loading-msg">Loading your data...</p>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="screen-app" style="display:none">
+  <div class="container">
+
+    <!-- Income banner -->
+    <div class="income-banner">
+      <label>Monthly income (AUD)</label>
+      <input type="number" id="income-input" placeholder="e.g. 7500" step="0.01" onchange="updateIncome(this.value)">
+      <div class="fx-row">
+        <span class="fx-label">AUD/NZD rate:</span>
+        <input type="number" id="fx-input" step="0.0001" style="max-width:90px;background:white;border-color:rgba(45,122,79,0.3);color:var(--green);font-weight:600" onchange="updateFX(this.value)">
+        <span class="fx-label" style="font-size:11px;color:var(--text3)" id="fx-hint"></span>
+      </div>
+    </div>
+
+    <div class="tab-bar">
+      <button class="tab active" onclick="switchTab('dashboard',this)">Dashboard</button>
+      <button class="tab" onclick="switchTab('fixed',this)">Fixed</button>
+      <button class="tab" onclick="switchTab('variable',this)">Variable</button>
+      <button class="tab" onclick="switchTab('report',this)">Reports</button>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div id="tab-dashboard" class="section active">
+      <div class="metrics" id="dash-metrics"></div>
+      <div class="card"><div class="card-title">Spending by category</div><div id="dash-cat-chart"></div></div>
+      <div class="card"><div class="card-title">Recent variable expenses</div><div id="dash-recent"></div></div>
+    </div>
+
+    <!-- FIXED -->
+    <div id="tab-fixed" class="section">
+      <div class="card">
+        <div class="card-title-row">
+          <span class="card-title" style="margin-bottom:0">Monthly fixed expenses</span>
+          <span style="font-size:12px;color:var(--text3)">Tap amount to edit</span>
+        </div>
+        <div id="fixed-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Add fixed expense</div>
+        <div class="form-row">
+          <div class="form-group"><label>Name</label><input type="text" id="f-name" placeholder="e.g. Gym membership"></div>
+          <div class="form-group"><label>Category</label>
+            <select id="f-cat">
+              <option>Housing</option><option>Utilities</option><option>Insurance</option>
+              <option>Loans</option><option>Investment</option><option>Family</option>
+              <option>Transport</option><option>Subscriptions</option><option>Food</option><option>Other</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Currency</label>
+            <select id="f-currency"><option value="AUD">AUD</option><option value="NZD">NZD</option></select>
+          </div>
+          <div class="form-group"><label>Amount</label><input type="number" id="f-amount" placeholder="0.00" step="0.01"></div>
+        </div>
+        <button class="btn btn-primary" onclick="addFixed()">Add fixed expense</button>
+      </div>
+    </div>
+
+    <!-- VARIABLE -->
+    <div id="tab-variable" class="section">
+      <div class="card">
+        <div class="card-title">Log a variable expense</div>
+        <div class="form-row">
+          <div class="form-group"><label>Name</label><input type="text" id="v-name" placeholder="e.g. Coffee"></div>
+          <div class="form-group"><label>Category</label>
+            <select id="v-cat">
+              <option>Food</option><option>Transport</option><option>Entertainment</option>
+              <option>Shopping</option><option>Health</option><option>Other</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Currency</label>
+            <select id="v-currency"><option value="AUD">AUD</option><option value="NZD">NZD</option></select>
+          </div>
+          <div class="form-group"><label>Amount</label><input type="number" id="v-amount" placeholder="0.00" step="0.01"></div>
+          <div class="form-group"><label>Date</label><input type="date" id="v-date"></div>
+        </div>
+        <div class="form-group" style="margin-bottom:1rem">
+          <label>Notes (optional)</label>
+          <input type="text" id="v-notes" placeholder="Any extra detail...">
+        </div>
+        <button class="btn btn-primary" onclick="addVariable()">Add expense</button>
+      </div>
+      <div class="card"><div class="card-title">This month's variable expenses</div><div id="variable-list"></div></div>
+    </div>
+
+    <!-- REPORTS -->
+    <div id="tab-report" class="section">
+      <div class="metrics" id="report-metrics"></div>
+      <div class="card"><div class="card-title">Fixed vs variable</div><div id="fv-chart"></div></div>
+      <div class="card"><div class="card-title">By category</div><div id="cat-chart"></div></div>
+      <div style="margin-top:0.5rem;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn" onclick="exportCSV()">Download CSV</button>
+        <button class="btn btn-sm" onclick="showSetup()">Edit credentials</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SCOPES    = 'https://www.googleapis.com/auth/spreadsheets';
+const DISCOVERY = 'https://sheets.googleapis.com/$discovery/rest?version=v4';
+const COLORS    = ['#2d7a4f','#1a5fa8','#9a6c00','#c0392b','#5b4fcf','#c0672b','#2d7a8a','#7a2d4f'];
+
+// Default fixed expenses — pre-loaded on first use
+const DEFAULT_FIXED = [
+  { name: 'Rent (Melbourne)', cat: 'Housing',    currency: 'AUD' },
+  { name: 'Utilities',        cat: 'Utilities',  currency: 'AUD' },
+  { name: 'Mortgage NZ',      cat: 'Housing',    currency: 'NZD' },
+  { name: 'Insurance',        cat: 'Insurance',  currency: 'AUD' },
+  { name: 'Student Loan',     cat: 'Loans',      currency: 'NZD' },
+  { name: 'Family Support',   cat: 'Family',     currency: 'AUD' },
+  { name: 'Stocks / Investing', cat: 'Investment', currency: 'AUD' },
+  { name: 'Groceries',        cat: 'Food',       currency: 'AUD' },
+  { name: 'Transport',        cat: 'Transport',  currency: 'AUD' },
+  { name: 'Eating Out',       cat: 'Food',       currency: 'AUD' },
+  { name: 'Misc',             cat: 'Other',      currency: 'AUD' },
+  { name: 'Phone Plan',       cat: 'Subscriptions', currency: 'AUD' },
+  { name: 'Enzo Insurance',   cat: 'Insurance',  currency: 'AUD' },
+  { name: 'Enzo Food',        cat: 'Food',       currency: 'AUD' },
+];
+
+let CLIENT_ID, SHEET_ID;
+let tokenClient, gapiReady = false, gisReady = false, accessToken = null;
+
+const state = {
+  fixed:    [],
+  variable: [],
+  nextId:   1,
+  income:   0,
+  fx:       0.9,   // AUD per 1 NZD — e.g. NZD 1 = AUD 0.90
+};
+
+// ── Credentials ───────────────────────────────────────────────────────────────
+
+function loadCredentials() {
+  CLIENT_ID   = localStorage.getItem('et_client_id') || '';
+  SHEET_ID    = localStorage.getItem('et_sheet_id')  || '';
+  state.income = parseFloat(localStorage.getItem('et_income')) || 0;
+  state.fx     = parseFloat(localStorage.getItem('et_fx'))     || 0.9;
+}
+
+function saveSetup() {
+  const cid = document.getElementById('setup-client-id').value.trim();
+  const sid = document.getElementById('setup-sheet-id').value.trim();
+  if (!cid || !sid) { showToast('Please fill in both fields'); return; }
+  localStorage.setItem('et_client_id', cid);
+  localStorage.setItem('et_sheet_id',  sid);
+  CLIENT_ID = cid; SHEET_ID = sid;
+  initGoogleAPIs();
+  showScreen('auth');
+}
+
+function showSetup() {
+  loadCredentials();
+  document.getElementById('setup-client-id').value = CLIENT_ID;
+  document.getElementById('setup-sheet-id').value  = SHEET_ID;
+  showScreen('setup');
+}
+
+function updateIncome(val) {
+  state.income = parseFloat(val) || 0;
+  localStorage.setItem('et_income', state.income);
+  render();
+}
+
+function updateFX(val) {
+  state.fx = parseFloat(val) || 0.9;
+  localStorage.setItem('et_fx', state.fx);
+  updateFXHint();
+  render();
+}
+
+function updateFXHint() {
+  document.getElementById('fx-hint').textContent = 'NZD 100 = AUD ' + (100 * state.fx).toFixed(2);
+}
+
+// ── Screens ───────────────────────────────────────────────────────────────────
+
+function showScreen(name) {
+  ['setup','auth','loading','app'].forEach(s =>
+    document.getElementById('screen-' + s).style.display = s === name ? '' : 'none'
+  );
+}
+
+// ── Google API ────────────────────────────────────────────────────────────────
+
+function initGoogleAPIs() {
+  if (typeof gapi   !== 'undefined' && !gapiReady) gapiLoads();
+  if (typeof google !== 'undefined' && !gisReady)  gisLoads();
+}
+
+function gapiLoads() {
+  gapi.load('client', async () => {
+    await gapi.client.init({ discoveryDocs: [DISCOVERY] });
+    gapiReady = true;
+  });
+}
+
+function gisLoads() {
+  if (!CLIENT_ID) return;
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPES,
+    callback: async (resp) => {
+      if (resp.error) { showToast('Sign-in error: ' + resp.error); showScreen('auth'); return; }
+      accessToken = resp.access_token;
+      gapi.client.setToken({ access_token: accessToken });
+      onSignedIn();
+    },
+  });
+  gisReady = true;
+}
+
+function handleAuth() {
+  if (!gapiReady) { showToast('Still loading, try again in a moment'); return; }
+  if (!gisReady) gisLoads();
+  tokenClient.requestAccessToken({ prompt: 'consent' });
+}
+
+function handleSignOut() {
+  if (accessToken) google.accounts.oauth2.revoke(accessToken, () => {});
+  accessToken = null;
+  gapi.client.setToken(null);
+  document.getElementById('signout-btn').style.display = 'none';
+  setSyncStatus('off', 'Not connected');
+  showScreen('auth');
+}
+
+async function onSignedIn() {
+  showScreen('loading');
+  document.getElementById('signout-btn').style.display = '';
+  setSyncStatus('busy', 'Loading...');
+  try {
+    await ensureHeaders();
+    await loadAll();
+    // If sheet is empty, seed with defaults
+    if (state.fixed.length === 0) {
+      state.fixed = DEFAULT_FIXED.map((d, i) => ({ id: i + 1, name: d.name, cat: d.cat, currency: d.currency, amount: 0 }));
+      state.nextId = DEFAULT_FIXED.length + 1;
+      await saveFixed();
+      showToast('Default expenses added — tap amounts to fill them in');
+    }
+    setSyncStatus('on', 'Synced');
+    render();
+    showScreen('app');
+  } catch(e) {
+    showToast('Error loading: ' + e.message);
+    setSyncStatus('off', 'Error');
+    showScreen('auth');
+  }
+}
+
+// ── Sheets helpers ────────────────────────────────────────────────────────────
+
+function setSyncStatus(s, label) {
+  document.getElementById('sync-dot').className = 'sync-dot' + (s==='on' ? ' on' : s==='busy' ? ' busy' : '');
+  document.getElementById('sync-label').textContent = label;
+}
+
+async function sheetsGet(range) {
+  const r = await gapi.client.sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range });
+  return r.result.values || [];
+}
+async function sheetsUpdate(range, values) {
+  await gapi.client.sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range, valueInputOption: 'USER_ENTERED', resource: { values } });
+}
+async function sheetsClear(range) {
+  await gapi.client.sheets.spreadsheets.values.clear({ spreadsheetId: SHEET_ID, range });
+}
+async function sheetsAppend(range, values) {
+  if (!values.length) return;
+  await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range, valueInputOption: 'USER_ENTERED', insertDataOption: 'INSERT_ROWS', resource: { values } });
+}
+
+async function ensureHeaders() {
+  const fh = await sheetsGet('Fixed!A1:E1');
+  if (!fh.length || fh[0][0] !== 'ID')
+    await sheetsUpdate('Fixed!A1:E1', [['ID','Name','Category','Currency','Amount']]);
+  const vh = await sheetsGet('Variable!A1:G1');
+  if (!vh.length || vh[0][0] !== 'ID')
+    await sheetsUpdate('Variable!A1:G1', [['ID','Name','Category','Currency','Amount','Date','Notes']]);
+}
+
+async function loadAll() {
+  document.getElementById('loading-msg').textContent = 'Reading your spreadsheet...';
+  const fd = await sheetsGet('Fixed!A2:E1000');
+  state.fixed = fd.filter(r => r[0]).map(r => ({
+    id: Number(r[0]), name: r[1]||'', cat: r[2]||'', currency: r[3]||'AUD', amount: parseFloat(r[4])||0
+  }));
+  const vd = await sheetsGet('Variable!A2:G1000');
+  state.variable = vd.filter(r => r[0]).map(r => ({
+    id: Number(r[0]), name: r[1]||'', cat: r[2]||'', currency: r[3]||'AUD',
+    amount: parseFloat(r[4])||0, date: r[5]||'', notes: r[6]||''
+  }));
+  const allIds = [...state.fixed, ...state.variable].map(e => e.id);
+  state.nextId = allIds.length ? Math.max(...allIds) + 1 : 1;
+}
+
+async function saveFixed() {
+  setSyncStatus('busy', 'Saving...');
+  try {
+    await sheetsClear('Fixed!A2:E1000');
+    await sheetsAppend('Fixed!A2', state.fixed.map(e => [e.id, e.name, e.cat, e.currency, e.amount]));
+    setSyncStatus('on', 'Synced');
+  } catch(e) { setSyncStatus('off', 'Save failed'); showToast('Save failed'); }
+}
+
+async function saveVariable() {
+  setSyncStatus('busy', 'Saving...');
+  try {
+    await sheetsClear('Variable!A2:G1000');
+    await sheetsAppend('Variable!A2', state.variable.map(e => [e.id, e.name, e.cat, e.currency, e.amount, e.date, e.notes||'']));
+    setSyncStatus('on', 'Synced');
+  } catch(e) { setSyncStatus('off', 'Save failed'); showToast('Save failed'); }
+}
+
+// ── Currency helpers ──────────────────────────────────────────────────────────
+
+// Convert any amount to AUD
+function toAUD(amount, currency) {
+  return currency === 'NZD' ? amount * state.fx : amount;
+}
+
+function totalFixedAUD()    { return state.fixed.reduce((s,e) => s + toAUD(e.amount, e.currency), 0); }
+function totalVariableAUD() { return state.variable.reduce((s,e) => s + toAUD(e.amount, e.currency), 0); }
+function grandAUD()         { return totalFixedAUD() + totalVariableAUD(); }
+
+// ── Data actions ──────────────────────────────────────────────────────────────
+
+async function addFixed() {
+  const name     = document.getElementById('f-name').value.trim();
+  const cat      = document.getElementById('f-cat').value;
+  const currency = document.getElementById('f-currency').value;
+  const amt      = parseFloat(document.getElementById('f-amount').value);
+  if (!name || !amt) { showToast('Fill in name and amount'); return; }
+  state.fixed.push({ id: state.nextId++, name, cat, currency, amount: amt });
+  document.getElementById('f-name').value = '';
+  document.getElementById('f-amount').value = '';
+  render(); await saveFixed(); showToast('Fixed expense saved');
+}
+
+async function updateFixed(id, val) {
+  const e = state.fixed.find(x => x.id === id);
+  if (e) { e.amount = parseFloat(val) || 0; render(); await saveFixed(); showToast('Updated'); }
+}
+
+async function deleteFixed(id) {
+  if (!confirm('Remove this fixed expense?')) return;
+  state.fixed = state.fixed.filter(x => x.id !== id);
+  render(); await saveFixed(); showToast('Removed');
+}
+
+async function addVariable() {
+  const name     = document.getElementById('v-name').value.trim();
+  const cat      = document.getElementById('v-cat').value;
+  const currency = document.getElementById('v-currency').value;
+  const amt      = parseFloat(document.getElementById('v-amount').value);
+  const date     = document.getElementById('v-date').value || today();
+  const notes    = document.getElementById('v-notes').value.trim();
+  if (!name || !amt) { showToast('Fill in name and amount'); return; }
+  state.variable.push({ id: state.nextId++, name, cat, currency, amount: amt, date, notes });
+  document.getElementById('v-name').value = '';
+  document.getElementById('v-amount').value = '';
+  document.getElementById('v-notes').value = '';
+  render(); await saveVariable(); showToast('Expense saved');
+}
+
+async function deleteVariable(id) {
+  if (!confirm('Remove this expense?')) return;
+  state.variable = state.variable.filter(x => x.id !== id);
+  render(); await saveVariable(); showToast('Removed');
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────────
+
+function fmtAUD(n) { return 'A$' + Number(n).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fmtLocal(amount, currency) {
+  const sym = currency === 'NZD' ? 'NZ$' : 'A$';
+  return sym + Number(amount).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function today() { return new Date().toISOString().slice(0, 10); }
+
+function render() {
+  renderDashboard();
+  renderFixedList();
+  renderVariableList();
+  renderReport();
+}
+
+function renderDashboard() {
+  const total     = grandAUD();
+  const tf        = totalFixedAUD();
+  const tv        = totalVariableAUD();
+  const surplus   = state.income - total;
+  const hasIncome = state.income > 0;
+
+  document.getElementById('dash-metrics').innerHTML = `
+    <div class="metric">
+      <div class="metric-label">Total spent (AUD)</div>
+      <div class="metric-value">${fmtAUD(total)}</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Fixed costs</div>
+      <div class="metric-value">${fmtAUD(tf)}</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">${hasIncome ? 'Surplus / Deficit' : 'Variable costs'}</div>
+      <div class="metric-value ${hasIncome ? (surplus >= 0 ? 'green' : 'red') : ''}">${hasIncome ? fmtAUD(surplus) : fmtAUD(tv)}</div>
+      ${hasIncome ? '<div class="metric-sub">after all expenses</div>' : ''}
+    </div>`;
+
+  renderCatBars('dash-cat-chart');
+
+  const recent = [...state.variable].sort((a,b) => b.date > a.date ? 1 : -1).slice(0, 6);
+  document.getElementById('dash-recent').innerHTML = recent.length
+    ? recent.map(e => expenseRow(e, false)).join('')
+    : '<div class="empty">No variable expenses logged yet</div>';
+}
+
+function renderFixedList() {
+  const el = document.getElementById('fixed-list');
+  if (!el) return;
+  el.innerHTML = state.fixed.length
+    ? state.fixed.map(e => `
+        <div class="row">
+          <span class="badge ${e.currency === 'NZD' ? 'badge-nzd' : 'badge-fixed'}">${e.currency}</span>
+          <span class="row-name">${e.name}<div class="row-sub">${e.cat}${e.currency === 'NZD' && e.amount ? ' · ' + fmtAUD(toAUD(e.amount, 'NZD')) + ' AUD' : ''}</div></span>
+          <input class="edit-amt btn" type="number" value="${e.amount}" step="0.01"
+            onchange="updateFixed(${e.id}, this.value)" title="Tap to edit">
+          <div style="display:flex;gap:5px">
+            <button class="btn btn-sm btn-danger" onclick="deleteFixed(${e.id})">Remove</button>
+          </div>
+        </div>`).join('')
+    : '<div class="empty">No fixed expenses yet</div>';
+}
+
+function renderVariableList() {
+  const el = document.getElementById('variable-list');
+  if (!el) return;
+  const sorted = [...state.variable].sort((a,b) => b.date > a.date ? 1 : -1);
+  el.innerHTML = sorted.length
+    ? sorted.map(e => expenseRow(e, true)).join('')
+    : '<div class="empty">No variable expenses this month yet</div>';
+}
+
+function expenseRow(e, showDelete) {
+  return `<div class="row">
+    <span class="badge ${e.currency === 'NZD' ? 'badge-nzd' : 'badge-var'}">${e.currency}</span>
+    <span class="row-name">${e.name}${e.notes ? ' <span style="color:var(--text3);font-weight:400">— ' + e.notes + '</span>' : ''}
+      <div class="row-sub">${e.cat}${e.date ? ' · ' + e.date : ''}</div></span>
+    <span class="row-amount">${fmtLocal(e.amount, e.currency)}</span>
+    ${showDelete ? `<div style="display:flex;gap:5px"><button class="btn btn-sm btn-danger" onclick="deleteVariable(${e.id})">Remove</button></div>` : ''}
+  </div>`;
+}
+
+function renderCatBars(elId) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const cats = {};
+  [...state.fixed, ...state.variable].forEach(e => {
+    cats[e.cat] = (cats[e.cat] || 0) + toAUD(e.amount, e.currency);
+  });
+  const total = grandAUD() || 1;
+  const sorted = Object.entries(cats).sort((a,b) => b[1]-a[1]);
+  el.innerHTML = sorted.length
+    ? sorted.map(([cat, amt], i) => `
+        <div class="bar-wrap">
+          <div class="bar-labels"><span>${cat}</span><span>${fmtAUD(amt)} · ${Math.round(amt/total*100)}%</span></div>
+          <div class="bar-bg"><div class="bar-fill" style="width:${Math.round(amt/total*100)}%;background:${COLORS[i%COLORS.length]}"></div></div>
+        </div>`).join('')
+    : '<div class="empty">No data yet — fill in your fixed expense amounts to get started</div>';
+}
+
+function renderReport() {
+  const tf = totalFixedAUD(), tv = totalVariableAUD(), gt = grandAUD() || 1;
+  const surplus = state.income - gt;
+  const hasIncome = state.income > 0;
+  const rm = document.getElementById('report-metrics');
+  if (!rm) return;
+  rm.innerHTML = `
+    <div class="metric"><div class="metric-label">Income</div><div class="metric-value purple">${hasIncome ? fmtAUD(state.income) : '—'}</div></div>
+    <div class="metric"><div class="metric-label">Total expenses</div><div class="metric-value">${fmtAUD(gt)}</div></div>
+    <div class="metric"><div class="metric-label">${hasIncome ? 'Surplus / Deficit' : 'Fixed costs'}</div><div class="metric-value ${hasIncome ? (surplus>=0?'green':'red') : ''}">${hasIncome ? fmtAUD(surplus) : fmtAUD(tf)}</div></div>`;
+
+  document.getElementById('fv-chart').innerHTML = `
+    <div class="bar-wrap">
+      <div class="bar-labels"><span>Fixed</span><span>${fmtAUD(tf)} · ${Math.round(tf/gt*100)}%</span></div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${Math.round(tf/gt*100)}%;background:#5b4fcf"></div></div>
+    </div>
+    <div class="bar-wrap">
+      <div class="bar-labels"><span>Variable</span><span>${fmtAUD(tv)} · ${Math.round(tv/gt*100)}%</span></div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${Math.round(tv/gt*100)}%;background:#1a5fa8"></div></div>
+    </div>`;
+  renderCatBars('cat-chart');
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+function switchTab(name, btn) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+  render();
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+function exportCSV() {
+  const rows = [['Type','Name','Category','Currency','Amount (local)','Amount (AUD)','Date','Notes']];
+  state.fixed.forEach(e    => rows.push(['Fixed',    e.name, e.cat, e.currency, e.amount, toAUD(e.amount,e.currency).toFixed(2), '',     '']));
+  state.variable.forEach(e => rows.push(['Variable', e.name, e.cat, e.currency, e.amount, toAUD(e.amount,e.currency).toFixed(2), e.date, e.notes||'']));
+  const csv = rows.map(r => r.map(c => '"' + String(c).replace(/"/g,'""') + '"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'expenses-' + today() + '.csv';
+  a.click();
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+
+window.gapiLoads = gapiLoads;
+window.gisLoads  = gisLoads;
+
+loadCredentials();
+document.getElementById('v-date').value = today();
+document.getElementById('income-input').value = state.income || '';
+document.getElementById('fx-input').value     = state.fx;
+updateFXHint();
+
+if (!CLIENT_ID || !SHEET_ID) {
+  showScreen('setup');
+} else {
+  document.getElementById('setup-client-id').value = CLIENT_ID;
+  document.getElementById('setup-sheet-id').value  = SHEET_ID;
+  showScreen('auth');
+  initGoogleAPIs();
+}
+</script>
+
+<script src="https://apis.google.com/js/api.js?onload=gapiLoads"></script>
+<script src="https://accounts.google.com/gsi/client?onload=gisLoads"></script>
+</body>
+</html>
