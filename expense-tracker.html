@@ -381,7 +381,7 @@ input:focus,select:focus{border-color:var(--accent)}
       </div>
       <div class="form-row">
         <div class="form-group"><label>Rate used (AUD→NZD)</label><input type="number" id="w-rate" placeholder="e.g. 1.0850" step="0.0001"></div>
-        <div class="form-group"><label>Amount received (NZD)</label><input type="number" id="w-received" placeholder="0.00" step="0.01" onchange="renderNZDExpensePicker()" onblur="renderNZDExpensePicker()"></div>
+        <div class="form-group"><label>Amount received (NZD)</label><input type="number" id="w-received" placeholder="0.00" step="0.01"></div>
         <div class="form-group"><label>Purpose</label>
           <select id="w-purpose">
             <option>Mortgage NZ</option><option>Student Loan</option><option>Savings NZ</option>
@@ -390,15 +390,6 @@ input:focus,select:focus{border-color:var(--accent)}
         </div>
       </div>
       <div class="form-group" style="margin-bottom:1rem"><label>Notes (optional)</label><input type="text" id="w-notes" placeholder="Any extra detail..."></div>
-
-      <!-- NZD expense linker -->
-      <div id="nzd-linker" style="display:none;margin-bottom:1rem">
-        <div style="height:0.5px;background:var(--border);margin-bottom:1rem"></div>
-        <div class="card-title" style="margin-bottom:.5rem;font-size:13px">Link NZD expenses this covers</div>
-        <div style="font-size:12px;color:var(--text3);margin-bottom:.75rem" id="nzd-linker-hint">Tick which NZD fixed expenses this transfer pays for</div>
-        <div id="nzd-expense-list"></div>
-        <div style="margin-top:.5rem;font-size:13px;color:var(--text2)" id="nzd-link-total"></div>
-      </div>
 
       <button class="btn btn-primary" onclick="logTransfer()">Log transfer</button>
     </div>
@@ -472,6 +463,22 @@ input:focus,select:focus{border-color:var(--accent)}
   </div>
 
 </div>
+</div>
+
+<!-- ALLOCATE MODAL -->
+<div class="modal-overlay" id="allocate-modal" style="display:none" onclick="closeAllocateModal(event)">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:560px">
+    <h3>Allocate transfer expenses</h3>
+    <div id="allocate-transfer-summary" style="background:var(--surface2);border-radius:var(--r-sm);padding:10px 14px;font-size:13px;color:var(--text2);margin-bottom:1rem"></div>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">Tick each expense this transfer paid for and enter the AUD amount. The fee will be split equally across all selected expenses.</p>
+    <div id="allocate-expense-list"></div>
+    <div id="allocate-fee-split" style="margin-top:.75rem;font-size:13px;padding:8px 12px;background:var(--teal-bg);border-radius:var(--r-sm);color:var(--teal);display:none"></div>
+    <div id="allocate-total-row" style="margin-top:.5rem;font-size:13px;color:var(--text2)"></div>
+    <div class="modal-actions" style="margin-top:1.25rem">
+      <button class="btn btn-primary" onclick="saveAllocations()">Save allocations</button>
+      <button class="btn btn-ghost" onclick="closeAllocateModal()">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <!-- EDIT MODAL -->
@@ -762,7 +769,7 @@ async function loadAll(){
     id:Number(r[0]),date:String(r[1]).trim(),sent:parseFloat(r[2])||0,
     fee:parseFloat(r[3])||0,rate:parseFloat(r[4])||0,
     received:parseFloat(r[5])||0,purpose:r[6]||'',notes:r[7]||'',
-    linkedExpenses:r[8]?String(r[8]).split(',').map(Number).filter(Boolean):[]
+    linkedExpenses: (()=>{ try{ return r[8]?JSON.parse(r[8]):[] }catch(e){ return r[8]?String(r[8]).split(',').map(Number).filter(Boolean).map(id=>({txId:id,audAmount:0,feeShare:0})):[] } })()
   }));
   const allIds=[...db.transactions,...db.transfers,...db.templates].map(e=>e.id);
   db.nextId=allIds.length?Math.max(...allIds)+1:100;
@@ -791,7 +798,7 @@ async function saveTransfers(){
   setSyncStatus('busy','Saving...');
   try{
     await sheetsClear('Transfers!A2:I1000');
-    await sheetsAppend('Transfers!A2',db.transfers.map(t=>[t.id,t.date,t.sent,t.fee,t.rate,t.received,t.purpose,t.notes,(t.linkedExpenses||[]).join(',')]));
+    await sheetsAppend('Transfers!A2',db.transfers.map(t=>[t.id,t.date,t.sent,t.fee,t.rate,t.received,t.purpose,t.notes,JSON.stringify(t.linkedExpenses||[])]));
     setSyncStatus('on','Synced');
     lastFailedSave=null;
     document.getElementById('sync-retry-btn').style.display='none';
@@ -915,14 +922,9 @@ async function logTransfer(){
   const purpose=document.getElementById('w-purpose').value;
   const notes=document.getElementById('w-notes').value.trim();
   if(!sent){showToast('Enter amount sent');return;}
-  const linkedExpenses=[...nzdLinkedIds];
-  db.transfers.push({id:db.nextId++,date,sent,fee,rate,received,purpose,notes,linkedExpenses});
-  // Clear form
+  db.transfers.push({id:db.nextId++,date,sent,fee,rate,received,purpose,notes,linkedExpenses:[]});
   ['w-sent','w-fee','w-rate','w-received','w-notes'].forEach(id=>document.getElementById(id).value='');
-  nzdLinkedIds=new Set();
-  nzdLastReceived=0;
-  document.getElementById('nzd-linker').style.display='none';
-  renderWise(); await saveTransfers(); showToast('Transfer logged');
+  renderWise(); await saveTransfers(); showToast('Transfer logged — tap Allocate to link expenses');
 }
 
 // ── Edit modal ────────────────────────────────────────────────────────────────
@@ -1306,56 +1308,122 @@ function renderReports(){
     </tbody></table></div>`;
 }
 
-// ── NZD expense linker ────────────────────────────────────────────────────────
-let nzdLinkedIds=new Set();
-let nzdLastReceived=0;
-function renderNZDExpensePicker(){
-  const received=parseFloat(document.getElementById('w-received').value)||0;
-  const linker=document.getElementById('nzd-linker');
-  if(!received){linker.style.display='none';nzdLinkedIds=new Set();nzdLastReceived=0;return;}
-  linker.style.display='';
-  // Only re-render the list if received value changed (prevents wiping checked state on blur)
-  if(received!==nzdLastReceived){
-    nzdLastReceived=received;
-    const cutoff=new Date(); cutoff.setDate(cutoff.getDate()-60);
-    const candidates=db.transactions.filter(t=>
-      t.currency==='NZD'&&t.type!=='income'&&safeParseDate(t.date)>=cutoff
-    ).sort((a,b)=>b.date>a.date?1:-1);
-    const list=document.getElementById('nzd-expense-list');
-    if(!candidates.length){
-      list.innerHTML='<div class="empty" style="padding:.75rem 0">No recent NZD expenses to link</div>';
-      document.getElementById('nzd-link-total').textContent='';
-      return;
-    }
-    list.innerHTML=candidates.map(t=>`
-      <label style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid var(--border);cursor:pointer;user-select:none">
-        <input type="checkbox" data-nzd-id="${t.id}"
-          style="width:18px;height:18px;cursor:pointer;flex-shrink:0;accent-color:var(--accent)" ${nzdLinkedIds.has(t.id)?'checked':''}>
-        <span style="flex:1;pointer-events:none">
+// ── Allocate modal ────────────────────────────────────────────────────────────
+let allocatingTransferId = null;
+
+function openAllocateModal(transferId){
+  const tr = db.transfers.find(t=>t.id===transferId);
+  if(!tr) return;
+  allocatingTransferId = transferId;
+
+  // Summary line
+  document.getElementById('allocate-transfer-summary').innerHTML =
+    `<strong>${tr.date}</strong> · Sent ${fmtAUD(tr.sent)} · Fee ${fmtAUD(tr.fee)} · Received ${fmtNZD(tr.received)} · Purpose: ${tr.purpose}`;
+
+  // Build list of ALL fixed/variable transactions (not income), sorted newest first
+  // Pre-check any that are already linked to this transfer
+  const existing = new Set((tr.linkedExpenses||[]).map(a=>a.txId||a));
+  const candidates = [...db.transactions]
+    .filter(t=>t.type!=='income')
+    .sort((a,b)=>b.date>a.date?1:-1);
+
+  const list = document.getElementById('allocate-expense-list');
+  if(!candidates.length){
+    list.innerHTML='<div class="empty">No expenses logged yet</div>';
+  } else {
+    list.innerHTML = candidates.map(t=>{
+      const existingAlloc = (tr.linkedExpenses||[]).find(a=>(a.txId||a)===t.id);
+      const existingAmt = existingAlloc&&existingAlloc.audAmount ? existingAlloc.audAmount : '';
+      const isChecked = existing.has(t.id);
+      const currLabel = t.currency==='NZD'?`badge-nzd`:`badge-${t.type}`;
+      return `<div class="allocate-row" id="arow-${t.id}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:0.5px solid var(--border)">
+        <input type="checkbox" data-alloc-id="${t.id}"
+          style="width:18px;height:18px;cursor:pointer;flex-shrink:0;accent-color:var(--accent)"
+          ${isChecked?'checked':''}>
+        <span style="flex:1;min-width:0">
           <span style="display:block;font-size:14px;font-weight:500">${t.name}</span>
-          <span style="display:block;font-size:12px;color:var(--text3)">${t.date} · ${fmtNZD(t.amount)}</span>
+          <span style="display:block;font-size:12px;color:var(--text3)">${t.date} · ${fmtLocal(t.amount,t.currency)} · <span class="badge ${currLabel}" style="font-size:10px">${t.type}</span></span>
         </span>
-      </label>`).join('');
-    list.querySelectorAll('input[data-nzd-id]').forEach(cb=>{
-      cb.addEventListener('change',e=>{
-        e.stopPropagation();
-        const id=Number(cb.getAttribute('data-nzd-id'));
-        if(cb.checked) nzdLinkedIds.add(id); else nzdLinkedIds.delete(id);
-        updateNZDLinkTotal();
+        <div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end">
+          <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">AUD amount</label>
+          <input type="number" data-alloc-amt="${t.id}" placeholder="0.00" step="0.01"
+            value="${existingAmt}"
+            style="width:90px;padding:5px 8px;font-size:13px;font-family:inherit;border:0.5px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);color:var(--text)"
+            ${isChecked?'':'disabled'}>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Listeners: checkbox toggles the amount input enabled/disabled and updates totals
+    list.querySelectorAll('input[data-alloc-id]').forEach(cb=>{
+      const id = Number(cb.getAttribute('data-alloc-id'));
+      const amtInput = list.querySelector(`input[data-alloc-amt="${id}"]`);
+      cb.addEventListener('change',()=>{
+        amtInput.disabled = !cb.checked;
+        if(cb.checked) amtInput.focus();
+        updateAllocateTotals();
       });
+      amtInput.addEventListener('input', updateAllocateTotals);
     });
   }
-  updateNZDLinkTotal();
+
+  updateAllocateTotals();
+  document.getElementById('allocate-modal').style.display='flex';
 }
-function updateNZDLinkTotal(){
-  const linkedTotal=db.transactions
-    .filter(t=>nzdLinkedIds.has(t.id)).reduce((s,t)=>s+t.amount,0);
-  const received=parseFloat(document.getElementById('w-received').value)||0;
-  const diff=received-linkedTotal;
-  const el=document.getElementById('nzd-link-total');
-  el.innerHTML=nzdLinkedIds.size
-    ?`Linked: ${fmtNZD(linkedTotal)} of ${fmtNZD(received)} · <span class="${diff>=0?'green':'red'}">${diff>=0?'Unallocated: '+fmtNZD(diff):'Over by: '+fmtNZD(-diff)}</span>`
-    :`Tick the NZD expenses this transfer covers (${fmtNZD(received)} to allocate)`;
+
+function updateAllocateTotals(){
+  const tr = db.transfers.find(t=>t.id===allocatingTransferId);
+  if(!tr) return;
+  const checked = [...document.querySelectorAll('input[data-alloc-id]:checked')];
+  const feeEach = checked.length ? tr.fee / checked.length : 0;
+
+  let totalAUD = 0;
+  checked.forEach(cb=>{
+    const id = cb.getAttribute('data-alloc-id');
+    const amt = parseFloat(document.querySelector(`input[data-alloc-amt="${id}"]`).value)||0;
+    totalAUD += amt;
+  });
+
+  const feeSplit = document.getElementById('allocate-fee-split');
+  const totalRow = document.getElementById('allocate-total-row');
+
+  if(checked.length){
+    feeSplit.style.display='';
+    feeSplit.textContent = `Fee ${fmtAUD(tr.fee)} ÷ ${checked.length} expense${checked.length>1?'s':''} = ${fmtAUD(feeEach)} each`;
+    const totalWithFees = totalAUD + tr.fee;
+    const diff = tr.sent - totalWithFees;
+    totalRow.innerHTML = `Total allocated: ${fmtAUD(totalAUD)} + fee ${fmtAUD(tr.fee)} = ${fmtAUD(totalWithFees)} · <span class="${Math.abs(diff)<0.01?'green':diff>0?'amber':'red'}">${Math.abs(diff)<0.01?'✓ Matches sent amount':diff>0?'Unallocated: '+fmtAUD(diff):'Over by: '+fmtAUD(-diff)}</span>`;
+  } else {
+    feeSplit.style.display='none';
+    totalRow.innerHTML = `<span style="color:var(--text3)">Tick expenses above to allocate this transfer (${fmtAUD(tr.sent)} sent)</span>`;
+  }
+}
+
+async function saveAllocations(){
+  const tr = db.transfers.find(t=>t.id===allocatingTransferId);
+  if(!tr) return;
+  const checked = [...document.querySelectorAll('input[data-alloc-id]:checked')];
+  if(!checked.length){ showToast('Tick at least one expense'); return; }
+
+  const feeEach = tr.fee / checked.length;
+  const linkedExpenses = checked.map(cb=>{
+    const id = Number(cb.getAttribute('data-alloc-id'));
+    const audAmount = parseFloat(document.querySelector(`input[data-alloc-amt="${id}"]`).value)||0;
+    return { txId: id, audAmount, feeShare: feeEach };
+  });
+
+  tr.linkedExpenses = linkedExpenses;
+  closeAllocateModal();
+  renderWise();
+  renderAll();
+  await saveTransfers();
+  showToast('Allocations saved');
+}
+
+function closeAllocateModal(e){
+  if(e&&e.target!==document.getElementById('allocate-modal'))return;
+  document.getElementById('allocate-modal').style.display='none';
+  allocatingTransferId=null;
 }
 
 
@@ -1369,19 +1437,24 @@ function renderWise(){
     db.transfers.length?`${db.transfers.length} transfers · ${fmtAUD(totalFees)} total fees`:'';
   document.getElementById('wise-list').innerHTML=sorted.length
     ?sorted.map(t=>{
-      const linked=(t.linkedExpenses||[]).map(id=>{
-        const tx=db.transactions.find(x=>x.id===id);
-        return tx?`<span style="font-size:11px;color:var(--purple);background:var(--purple-bg);padding:2px 6px;border-radius:4px;margin-right:3px">${tx.name} ${fmtNZD(tx.amount)}</span>`:'';
+      const allocs=(t.linkedExpenses||[]);
+      const allocTags = allocs.map(a=>{
+        const txId = a.txId||a; // handle old format (plain id) and new format ({txId,...})
+        const tx=db.transactions.find(x=>x.id===txId);
+        const audAmt = a.audAmount ? ` · ${fmtAUD(a.audAmount)}` : '';
+        return tx?`<span style="font-size:11px;color:var(--purple);background:var(--purple-bg);padding:2px 7px;border-radius:4px;margin-right:3px;margin-bottom:2px;display:inline-block">${tx.name}${audAmt}</span>`:'';
       }).join('');
-      return `<div class="row" style="flex-wrap:wrap;gap:6px">
-        <span class="badge badge-wise">Wise</span>
+      const allocCount = allocs.length;
+      return `<div class="row" style="flex-wrap:wrap;gap:6px;align-items:flex-start">
+        <span class="badge badge-wise" style="margin-top:2px">Wise</span>
         <span class="row-main">
           <div class="row-name">${t.purpose}${t.notes?' — '+t.notes:''}</div>
-          <div class="row-sub">${t.date} · fee ${fmtAUD(t.fee)} · rate ${t.rate||'—'}</div>
-          ${linked?`<div style="margin-top:4px">${linked}</div>`:''}
+          <div class="row-sub">${t.date} · sent ${fmtAUD(t.sent)} · fee ${fmtAUD(t.fee)} · rate ${t.rate||'—'}</div>
+          ${allocTags?`<div style="margin-top:5px">${allocTags}</div>`:`<div style="margin-top:4px;font-size:11px;color:var(--text3)">No expenses allocated yet</div>`}
         </span>
-        <span class="row-amount teal">${fmtNZD(t.received)}</span>
-        <div style="display:flex;gap:4px">
+        <span class="row-amount teal" style="margin-top:2px">${fmtNZD(t.received)}</span>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          <button class="btn btn-sm btn-teal" onclick="openAllocateModal(${t.id})">Allocate</button>
           <button class="btn btn-sm" onclick="openEditTransfer(${t.id})">Edit</button>
         </div>
       </div>`;
