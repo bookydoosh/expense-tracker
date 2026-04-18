@@ -381,7 +381,7 @@ input:focus,select:focus{border-color:var(--accent)}
       </div>
       <div class="form-row">
         <div class="form-group"><label>Rate used (AUD→NZD)</label><input type="number" id="w-rate" placeholder="e.g. 1.0850" step="0.0001"></div>
-        <div class="form-group"><label>Amount received (NZD)</label><input type="number" id="w-received" placeholder="0.00" step="0.01" oninput="renderNZDExpensePicker()"></div>
+        <div class="form-group"><label>Amount received (NZD)</label><input type="number" id="w-received" placeholder="0.00" step="0.01" onchange="renderNZDExpensePicker()" onblur="renderNZDExpensePicker()"></div>
         <div class="form-group"><label>Purpose</label>
           <select id="w-purpose">
             <option>Mortgage NZ</option><option>Student Loan</option><option>Savings NZ</option>
@@ -920,6 +920,7 @@ async function logTransfer(){
   // Clear form
   ['w-sent','w-fee','w-rate','w-received','w-notes'].forEach(id=>document.getElementById(id).value='');
   nzdLinkedIds=new Set();
+  nzdLastReceived=0;
   document.getElementById('nzd-linker').style.display='none';
   renderWise(); await saveTransfers(); showToast('Transfer logged');
 }
@@ -969,6 +970,32 @@ function openEditTransfer(id){
   document.getElementById('edit-modal').style.display='flex';
 }
 
+function openEditTemplate(id){
+  const t=db.templates.find(t=>t.id===id);
+  if(!t)return;
+  editingId=id; editingType='template';
+  const cats=['Housing','Utilities','Insurance','Loans','Investment','Family','Transport','Subscriptions','Food','Other'];
+  document.getElementById('modal-title').textContent='Edit template';
+  document.getElementById('modal-body').innerHTML=`
+    <div class="form-row">
+      <div class="form-group"><label>Name</label><input type="text" id="edit-name" value="${t.name}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Category</label>
+        <select id="edit-cat">
+          ${cats.map(c=>`<option${c===t.cat?' selected':''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label>Currency</label>
+        <select id="edit-currency">
+          <option value="AUD"${t.currency==='AUD'?' selected':''}>AUD</option>
+          <option value="NZD"${t.currency==='NZD'?' selected':''}>NZD</option>
+        </select>
+      </div>
+    </div>`;
+  document.getElementById('edit-modal').style.display='flex';
+}
+
 async function saveEdit(){
   if(editingType==='tx'){
     const tx=db.transactions.find(t=>t.id===editingId);
@@ -980,6 +1007,13 @@ async function saveEdit(){
     tx.amount=parseFloat(document.getElementById('edit-amount').value)||0;
     tx.notes=document.getElementById('edit-notes').value.trim();
     closeModal(); renderAll(); await saveTransactions(); showToast('Updated');
+  } else if(editingType==='template'){
+    const t=db.templates.find(t=>t.id===editingId);
+    if(!t)return;
+    t.name=document.getElementById('edit-name').value.trim();
+    t.cat=document.getElementById('edit-cat').value;
+    t.currency=document.getElementById('edit-currency').value;
+    closeModal(); renderTemplates(); renderTemplateGrid(); await saveTemplates(); showToast('Template updated');
   } else {
     const tr=db.transfers.find(t=>t.id===editingId);
     if(!tr)return;
@@ -999,6 +1033,9 @@ async function deleteFromModal(){
   if(editingType==='tx'){
     db.transactions=db.transactions.filter(t=>t.id!==editingId);
     closeModal(); renderAll(); await saveTransactions(); showToast('Deleted');
+  } else if(editingType==='template'){
+    db.templates=db.templates.filter(t=>t.id!==editingId);
+    closeModal(); renderTemplates(); renderTemplateGrid(); await saveTemplates(); showToast('Template removed');
   } else {
     db.transfers=db.transfers.filter(t=>t.id!==editingId);
     closeModal(); renderWise(); await saveTransfers(); showToast('Deleted');
@@ -1134,9 +1171,26 @@ function renderDashboard(){
       </div>`).join('')
     :'<div class="empty">No expenses in this period</div>';
 
-  const recent=[...txs].sort((a,b)=>b.date>a.date?1:-1).slice(0,10);
-  document.getElementById('dash-recent').innerHTML=recent.length
-    ?recent.map(t=>txRow(t)).join('')
+  // Merge logged transactions + Wise transfers for recent feed
+  const recentTxs=txs.map(t=>({...t,_kind:'tx'}));
+  const recentTransfers=db.transfers.filter(t=>txInRange(t,start,end)).map(t=>({
+    _kind:'transfer',id:t.id,date:t.date,
+    name:'Wise Transfer'+(t.purpose?' — '+t.purpose:''),
+    sub:`Sent ${fmtAUD(t.sent)} · fee ${fmtAUD(t.fee)} · received ${fmtNZD(t.received)}`,
+    amount:t.sent
+  }));
+  const combined=[...recentTxs,...recentTransfers].sort((a,b)=>b.date>a.date?1:-1).slice(0,12);
+  document.getElementById('dash-recent').innerHTML=combined.length
+    ?combined.map(t=>t._kind==='transfer'
+      ?`<div class="row">
+          <span class="badge badge-wise">Wise</span>
+          <span class="row-main">
+            <div class="row-name">${t.name}</div>
+            <div class="row-sub">${t.date} · ${t.sub}</div>
+          </span>
+          <span class="row-amount teal">-${fmtAUD(t.amount)}</span>
+        </div>`
+      :txRow(t)).join('')
     :'<div class="empty">No transactions in this period</div>';
 }
 
@@ -1254,38 +1308,43 @@ function renderReports(){
 
 // ── NZD expense linker ────────────────────────────────────────────────────────
 let nzdLinkedIds=new Set();
+let nzdLastReceived=0;
 function renderNZDExpensePicker(){
   const received=parseFloat(document.getElementById('w-received').value)||0;
   const linker=document.getElementById('nzd-linker');
-  if(!received){linker.style.display='none';return;}
+  if(!received){linker.style.display='none';nzdLinkedIds=new Set();nzdLastReceived=0;return;}
   linker.style.display='';
-  const cutoff=new Date(); cutoff.setDate(cutoff.getDate()-60);
-  const unlinked=db.transactions.filter(t=>
-    t.currency==='NZD'&&t.type!=='income'&&safeParseDate(t.date)>=cutoff
-  ).sort((a,b)=>b.date>a.date?1:-1);
-  const list=document.getElementById('nzd-expense-list');
-  if(!unlinked.length){
-    list.innerHTML='<div class="empty" style="padding:.75rem 0">No recent NZD expenses to link</div>';
-    document.getElementById('nzd-link-total').textContent='';
-    return;
-  }
-  list.innerHTML=unlinked.map(t=>`
-    <label style="display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:0.5px solid var(--border);cursor:pointer">
-      <input type="checkbox" data-nzd-id="${t.id}" data-nzd-amt="${t.amount}"
-        style="width:18px;height:18px;cursor:pointer;flex-shrink:0" ${nzdLinkedIds.has(t.id)?'checked':''}>
-      <span style="flex:1">
-        <span style="display:block;font-size:14px;font-weight:500">${t.name}</span>
-        <span style="display:block;font-size:12px;color:var(--text3)">${t.date} · ${fmtNZD(t.amount)}</span>
-      </span>
-    </label>`).join('');
-  // Attach listeners after render
-  list.querySelectorAll('input[data-nzd-id]').forEach(cb=>{
-    cb.addEventListener('change',()=>{
-      const id=Number(cb.getAttribute('data-nzd-id'));
-      if(cb.checked) nzdLinkedIds.add(id); else nzdLinkedIds.delete(id);
-      updateNZDLinkTotal();
+  // Only re-render the list if received value changed (prevents wiping checked state on blur)
+  if(received!==nzdLastReceived){
+    nzdLastReceived=received;
+    const cutoff=new Date(); cutoff.setDate(cutoff.getDate()-60);
+    const candidates=db.transactions.filter(t=>
+      t.currency==='NZD'&&t.type!=='income'&&safeParseDate(t.date)>=cutoff
+    ).sort((a,b)=>b.date>a.date?1:-1);
+    const list=document.getElementById('nzd-expense-list');
+    if(!candidates.length){
+      list.innerHTML='<div class="empty" style="padding:.75rem 0">No recent NZD expenses to link</div>';
+      document.getElementById('nzd-link-total').textContent='';
+      return;
+    }
+    list.innerHTML=candidates.map(t=>`
+      <label style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:0.5px solid var(--border);cursor:pointer;user-select:none">
+        <input type="checkbox" data-nzd-id="${t.id}"
+          style="width:18px;height:18px;cursor:pointer;flex-shrink:0;accent-color:var(--accent)" ${nzdLinkedIds.has(t.id)?'checked':''}>
+        <span style="flex:1;pointer-events:none">
+          <span style="display:block;font-size:14px;font-weight:500">${t.name}</span>
+          <span style="display:block;font-size:12px;color:var(--text3)">${t.date} · ${fmtNZD(t.amount)}</span>
+        </span>
+      </label>`).join('');
+    list.querySelectorAll('input[data-nzd-id]').forEach(cb=>{
+      cb.addEventListener('change',e=>{
+        e.stopPropagation();
+        const id=Number(cb.getAttribute('data-nzd-id'));
+        if(cb.checked) nzdLinkedIds.add(id); else nzdLinkedIds.delete(id);
+        updateNZDLinkTotal();
+      });
     });
-  });
+  }
   updateNZDLinkTotal();
 }
 function updateNZDLinkTotal(){
@@ -1295,7 +1354,7 @@ function updateNZDLinkTotal(){
   const diff=received-linkedTotal;
   const el=document.getElementById('nzd-link-total');
   el.innerHTML=nzdLinkedIds.size
-    ?`Linked: ${fmtNZD(linkedTotal)} / ${fmtNZD(received)} received · <span class="${diff>=0?'green':'red'}">${diff>=0?'Unallocated '+fmtNZD(diff):'Over by '+fmtNZD(-diff)}</span>`
+    ?`Linked: ${fmtNZD(linkedTotal)} of ${fmtNZD(received)} · <span class="${diff>=0?'green':'red'}">${diff>=0?'Unallocated: '+fmtNZD(diff):'Over by: '+fmtNZD(-diff)}</span>`
     :`Tick the NZD expenses this transfer covers (${fmtNZD(received)} to allocate)`;
 }
 
@@ -1328,8 +1387,6 @@ function renderWise(){
       </div>`;
     }).join('')
     :'<div class="empty">No transfers logged yet</div>';
-  // Refresh linker in case we just came back
-  renderNZDExpensePicker();
 }
 
 // ── Render: Settings ──────────────────────────────────────────────────────────
@@ -1340,7 +1397,10 @@ function renderTemplates(){
     <div class="row">
       <span class="badge ${t.currency==='NZD'?'badge-nzd':'badge-fixed'}">${t.currency}</span>
       <span class="row-main"><div class="row-name">${t.name}</div><div class="row-sub">${t.cat}</div></span>
-      <button class="btn btn-sm btn-danger" onclick="deleteTemplate(${t.id})">Remove</button>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-sm" onclick="openEditTemplate(${t.id})">Edit</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteTemplate(${t.id})">Remove</button>
+      </div>
     </div>`).join('');
 }
 function renderTemplateGrid(){
