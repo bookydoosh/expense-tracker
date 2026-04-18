@@ -76,6 +76,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .badge-fixed{background:var(--amber-bg);color:var(--amber)}
 .badge-var{background:var(--blue-bg);color:var(--blue)}
 .badge-income{background:var(--green-bg);color:var(--green)}
+.badge-capital{background:var(--purple-bg);color:var(--purple)}
+.badge-relocation{background:#fde8d8;color:#b85c00}
 .badge-nzd{background:var(--purple-bg);color:var(--purple)}
 .badge-wise{background:var(--teal-bg);color:var(--teal)}
 .form-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:1rem}
@@ -214,13 +216,20 @@ input:focus,select:focus{border-color:var(--accent)}
         <div style="font-size:18px;font-weight:600" id="dash-period-label"></div>
         <div style="font-size:13px;color:var(--text3)" id="dash-date-range"></div>
       </div>
-      <div class="period-tabs">
-        <button class="period-tab active" onclick="setDashPeriod('week',this)">Week</button>
-        <button class="period-tab" onclick="setDashPeriod('month',this)">Cal Month</button>
-        <button class="period-tab" onclick="setDashPeriod('paycycle',this)">Pay Cycle</button>
-        <button class="period-tab" onclick="setDashPeriod('year',this)">Year</button>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer">
+          <input type="checkbox" id="dash-exclude-relocation" onchange="renderDashboard()" style="width:14px;height:14px;cursor:pointer;accent-color:var(--accent)">
+          Exclude relocation
+        </label>
+        <div class="period-tabs">
+          <button class="period-tab active" onclick="setDashPeriod('week',this)">Week</button>
+          <button class="period-tab" onclick="setDashPeriod('month',this)">Cal Month</button>
+          <button class="period-tab" onclick="setDashPeriod('paycycle',this)">Pay Cycle</button>
+          <button class="period-tab" onclick="setDashPeriod('year',this)">Year</button>
+        </div>
       </div>
     </div>
+    <div id="dash-capital-banner" style="display:none;background:var(--purple-bg);border:0.5px solid rgba(91,79,207,.2);border-radius:var(--r-sm);padding:10px 14px;margin-bottom:1rem;font-size:13px;color:var(--purple)"></div>
     <div class="metrics" id="dash-metrics"></div>
     <div class="card"><div class="card-title">Spending by category</div><div id="dash-cat"></div></div>
     <div class="card"><div class="card-title">Recent transactions</div><div id="dash-recent"></div></div>
@@ -232,6 +241,7 @@ input:focus,select:focus{border-color:var(--accent)}
       <button class="seg-btn active" onclick="setLogType('fixed',this)">Fixed</button>
       <button class="seg-btn" onclick="setLogType('variable',this)">Variable</button>
       <button class="seg-btn" onclick="setLogType('income',this)">Income</button>
+      <button class="seg-btn" onclick="setLogType('capital',this)">Capital</button>
     </div>
     <div id="log-fixed">
       <div class="card">
@@ -259,7 +269,8 @@ input:focus,select:focus{border-color:var(--accent)}
           <div class="form-group"><label>Category</label>
             <select id="v-cat">
               <option>Food</option><option>Transport</option><option>Entertainment</option>
-              <option>Shopping</option><option>Health</option><option>Personal Care</option><option>Other</option>
+              <option>Shopping</option><option>Health</option><option>Personal Care</option>
+              <option>Relocation</option><option>Other</option>
             </select>
           </div>
         </div>
@@ -285,6 +296,18 @@ input:focus,select:focus{border-color:var(--accent)}
         <button class="btn btn-primary" onclick="logIncome()">Log income</button>
       </div>
     </div>
+    <div id="log-capital" style="display:none">
+      <div class="card">
+        <div class="card-title">Log capital transfer</div>
+        <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;line-height:1.6">Money moved from NZ savings to AUS. <strong>Not income</strong> — tracked separately as a capital injection to your pool.</p>
+        <div class="form-row">
+          <div class="form-group"><label>Amount received (AUD)</label><input type="number" id="k-amount" placeholder="0.00" step="0.01"></div>
+          <div class="form-group"><label>Date received</label><input type="date" id="k-date"></div>
+        </div>
+        <div class="form-group" style="margin-bottom:1rem"><label>Notes (optional)</label><input type="text" id="k-notes" placeholder="e.g. NZ house sale proceeds"></div>
+        <button class="btn btn-primary" onclick="logCapital()">Log capital transfer</button>
+      </div>
+    </div>
   </div>
 
   <!-- HISTORY -->
@@ -296,6 +319,7 @@ input:focus,select:focus{border-color:var(--accent)}
         <option value="fixed">Fixed</option>
         <option value="variable">Variable</option>
         <option value="income">Income</option>
+        <option value="capital">Capital</option>
       </select>
       <select id="h-cat" onchange="renderHistory()"><option value="all">All categories</option></select>
     </div>
@@ -376,21 +400,27 @@ input:focus,select:focus{border-color:var(--accent)}
       <div class="card-title">Log a Wise transfer</div>
       <div class="form-row">
         <div class="form-group"><label>Date</label><input type="date" id="w-date"></div>
-        <div class="form-group"><label>Amount sent (AUD)</label><input type="number" id="w-sent" placeholder="0.00" step="0.01"></div>
-        <div class="form-group"><label>Fee paid (AUD)</label><input type="number" id="w-fee" placeholder="0.00" step="0.01"></div>
+        <div class="form-group"><label>NZD needed (to receive)</label><input type="number" id="w-received" placeholder="0.00" step="0.01" oninput="calcWiseLog()"></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>Rate used (AUD→NZD)</label><input type="number" id="w-rate" placeholder="e.g. 1.0850" step="0.0001"></div>
-        <div class="form-group"><label>Amount received (NZD)</label><input type="number" id="w-received" placeholder="0.00" step="0.01"></div>
-        <div class="form-group"><label>Purpose</label>
-          <select id="w-purpose">
-            <option>Mortgage NZ</option><option>Student Loan</option><option>Savings NZ</option>
-            <option>Family Support</option><option>Other</option>
+        <div class="form-group"><label>Rate (AUD→NZD)</label><input type="number" id="w-rate" placeholder="e.g. 1.0850" step="0.0001" oninput="calcWiseLog()"></div>
+        <div class="form-group"><label>Fee type</label>
+          <select id="w-fee-type" onchange="calcWiseLog()">
+            <option value="percent">Percentage %</option>
+            <option value="fixed">Fixed AUD</option>
           </select>
         </div>
+        <div class="form-group"><label>Fee amount / %</label><input type="number" id="w-fee-val" value="0.65" step="0.01" oninput="calcWiseLog()"></div>
       </div>
-      <div class="form-group" style="margin-bottom:1rem"><label>Notes (optional)</label><input type="text" id="w-notes" placeholder="Any extra detail..."></div>
-
+      <div id="wise-log-result" style="display:none;background:var(--surface2);border-radius:var(--r-sm);padding:12px 14px;margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:0.5px solid var(--border)"><span style="color:var(--text2)">NZD to receive</span><span id="wlr-nzd" style="font-family:'DM Mono',monospace"></span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:0.5px solid var(--border)"><span style="color:var(--text2)">AUD before fee</span><span id="wlr-before" style="font-family:'DM Mono',monospace"></span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:0.5px solid var(--border);color:var(--red)"><span>Wise fee</span><span id="wlr-fee" style="font-family:'DM Mono',monospace"></span></div>
+        <div style="display:flex;justify-content:space-between;font-size:14px;padding:6px 0;font-weight:600"><span>Total AUD to send</span><span id="wlr-total" style="font-family:'DM Mono',monospace;color:var(--teal)"></span></div>
+      </div>
+      <input type="hidden" id="w-sent">
+      <input type="hidden" id="w-fee">
+      <div class="form-group" style="margin-bottom:1rem"><label>Notes (optional)</label><input type="text" id="w-notes" placeholder="e.g. covers mortgage + student loan"></div>
       <button class="btn btn-primary" onclick="logTransfer()">Log transfer</button>
     </div>
 
@@ -915,15 +945,18 @@ function prefillTransferFromCalc(){
 
 async function logTransfer(){
   const date=document.getElementById('w-date').value||today();
+  const received=parseFloat(document.getElementById('w-received').value)||0;
+  const rate=parseFloat(document.getElementById('w-rate').value)||(db.wiseRate||db.fx);
   const sent=parseFloat(document.getElementById('w-sent').value)||0;
   const fee=parseFloat(document.getElementById('w-fee').value)||0;
-  const rate=parseFloat(document.getElementById('w-rate').value)||0;
-  const received=parseFloat(document.getElementById('w-received').value)||0;
-  const purpose=document.getElementById('w-purpose').value;
   const notes=document.getElementById('w-notes').value.trim();
-  if(!sent){showToast('Enter amount sent');return;}
-  db.transfers.push({id:db.nextId++,date,sent,fee,rate,received,purpose,notes,linkedExpenses:[]});
-  ['w-sent','w-fee','w-rate','w-received','w-notes'].forEach(id=>document.getElementById(id).value='');
+  if(!received){showToast('Enter NZD amount to receive');return;}
+  if(!rate){showToast('Enter exchange rate');return;}
+  db.transfers.push({id:db.nextId++,date,sent,fee,rate,received,notes,linkedExpenses:[]});
+  ['w-received','w-rate','w-fee-val','w-sent','w-fee','w-notes'].forEach(id=>{
+    const el=document.getElementById(id); if(el&&el.type!=='select-one') el.value='';
+  });
+  document.getElementById('wise-log-result').style.display='none';
   renderWise(); await saveTransfers(); showToast('Transfer logged — tap Allocate to link expenses');
 }
 
@@ -1058,6 +1091,7 @@ function setLogType(type,btn){
   document.getElementById('log-fixed').style.display   =type==='fixed'   ?'':'none';
   document.getElementById('log-variable').style.display=type==='variable'?'':'none';
   document.getElementById('log-income').style.display  =type==='income'  ?'':'none';
+  document.getElementById('log-capital').style.display =type==='capital' ?'':'none';
 }
 function selectTemplate(tpl){
   selectedTpl=tpl;
@@ -1109,6 +1143,36 @@ async function logIncome(){
   document.getElementById('i-notes').value='';
   renderAll(); await saveTransactions(); showToast('Income logged');
 }
+async function logCapital(){
+  const amt=parseFloat(document.getElementById('k-amount').value);
+  const date=document.getElementById('k-date').value||today();
+  const notes=document.getElementById('k-notes').value.trim();
+  if(!amt){showToast('Enter an amount');return;}
+  db.transactions.push({id:db.nextId++,date,name:'Capital Transfer',cat:'Capital',type:'capital',currency:'AUD',amount:amt,notes});
+  document.getElementById('k-amount').value='';
+  document.getElementById('k-notes').value='';
+  renderAll(); await saveTransactions(); showToast('Capital transfer logged');
+}
+
+// ── Wise log calculator ───────────────────────────────────────────────────────
+function calcWiseLog(){
+  const nzd=parseFloat(document.getElementById('w-received').value)||0;
+  const rate=parseFloat(document.getElementById('w-rate').value)||(db.wiseRate||db.fx);
+  const feeType=document.getElementById('w-fee-type').value;
+  const feeVal=parseFloat(document.getElementById('w-fee-val').value)||0;
+  const result=document.getElementById('wise-log-result');
+  if(!nzd||!rate){result.style.display='none';return;}
+  const audBeforeFee=nzd/rate;
+  const fee=feeType==='fixed'?feeVal:(audBeforeFee*feeVal/100);
+  const total=audBeforeFee+fee;
+  document.getElementById('wlr-nzd').textContent=fmtNZD(nzd);
+  document.getElementById('wlr-before').textContent=fmtAUD(audBeforeFee);
+  document.getElementById('wlr-fee').textContent=fmtAUD(fee);
+  document.getElementById('wlr-total').textContent=fmtAUD(total);
+  document.getElementById('w-sent').value=total.toFixed(2);
+  document.getElementById('w-fee').value=fee.toFixed(2);
+  result.style.display='';
+}
 
 // ── Templates ─────────────────────────────────────────────────────────────────
 async function addTemplate(){
@@ -1149,35 +1213,77 @@ function setDashPeriod(p,btn){
 }
 function renderDashboard(){
   const {start,end}=periodRange(dashPeriod);
+  const excludeRelocation=document.getElementById('dash-exclude-relocation')?.checked||false;
   const txs=db.transactions.filter(t=>txInRange(t,start,end));
+
+  // Capital transfers in period — shown separately, not in income
+  const capital=txs.filter(t=>t.type==='capital').reduce((s,t)=>s+t.amount,0);
+  const capitalBanner=document.getElementById('dash-capital-banner');
+  if(capital>0){
+    capitalBanner.style.display='';
+    capitalBanner.innerHTML=`<strong>Capital injection this period: ${fmtAUD(capital)}</strong> — NZ savings moved to AUS, not counted as income`;
+  } else {
+    capitalBanner.style.display='none';
+  }
+
   const income=txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
-  const fixed=txs.filter(t=>t.type==='fixed').reduce((s,t)=>s+toAUD(t.amount,t.currency),0);
-  const variable=txs.filter(t=>t.type==='variable').reduce((s,t)=>s+toAUD(t.amount,t.currency),0);
-  const total=fixed+variable;
+
+  // Expense totals from regular transactions (exclude capital, exclude relocation if toggled)
+  const txExpenses=txs.filter(t=>t.type!=='income'&&t.type!=='capital'&&(!excludeRelocation||t.cat!=='Relocation'))
+    .reduce((s,t)=>s+toAUD(t.amount,t.currency),0);
+
+  // Wise transfers in period — AUD sent counts as expense
+  // If allocated, split by category; if not, lump as "Transfer"
+  const transfersInPeriod=db.transfers.filter(t=>txInRange(t,start,end));
+  let wiseExpenseTotal=0;
+  const wiseCats={};
+  transfersInPeriod.forEach(tr=>{
+    if((tr.linkedExpenses||[]).length){
+      tr.linkedExpenses.forEach(a=>{
+        const tx=db.transactions.find(x=>x.id===(a.txId||a));
+        const cat=tx?tx.cat:'Transfer';
+        if(excludeRelocation&&cat==='Relocation') return;
+        const audAmt=(a.audAmount||0)+(a.feeShare||0);
+        wiseCats[cat]=(wiseCats[cat]||0)+audAmt;
+        wiseExpenseTotal+=audAmt;
+      });
+    } else {
+      // Unallocated transfer — count full AUD sent
+      const audAmt=tr.sent||0;
+      wiseCats['Transfer']=(wiseCats['Transfer']||0)+audAmt;
+      wiseExpenseTotal+=audAmt;
+    }
+  });
+
+  const total=txExpenses+wiseExpenseTotal;
   const surplus=income-total;
   const periodNames={week:'This week',month:'This month',paycycle:'Pay cycle',year:'This year'};
   document.getElementById('dash-period-label').textContent=periodNames[dashPeriod];
   document.getElementById('dash-date-range').textContent=rangeLabel(dashPeriod);
   document.getElementById('dash-metrics').innerHTML=`
     <div class="metric"><div class="metric-label">Income</div><div class="metric-value purple">${income?fmtAUD(income):'—'}</div></div>
-    <div class="metric"><div class="metric-label">Total expenses</div><div class="metric-value">${fmtAUD(total)}</div></div>
+    <div class="metric"><div class="metric-label">Total expenses</div><div class="metric-value">${fmtAUD(total)}<div class="metric-sub">${wiseExpenseTotal>0?'incl. '+fmtAUD(wiseExpenseTotal)+' Wise':''}</div></div></div>
     <div class="metric"><div class="metric-label">Surplus / Deficit</div><div class="metric-value ${income?(surplus>=0?'green':'red'):''}">${income?fmtAUD(surplus):'—'}<div class="metric-sub">${income?'after all expenses':''}</div></div></div>`;
+
+  // Category chart — merge tx categories + wise allocated categories
   const cats={};
-  txs.filter(t=>t.type!=='income').forEach(t=>{cats[t.cat]=(cats[t.cat]||0)+toAUD(t.amount,t.currency);});
+  txs.filter(t=>t.type!=='income'&&t.type!=='capital'&&(!excludeRelocation||t.cat!=='Relocation'))
+    .forEach(t=>{cats[t.cat]=(cats[t.cat]||0)+toAUD(t.amount,t.currency);});
+  Object.entries(wiseCats).forEach(([c,v])=>{cats[c]=(cats[c]||0)+v;});
   const maxCat=Math.max(...Object.values(cats),1);
   document.getElementById('dash-cat').innerHTML=Object.entries(cats).sort((a,b)=>b[1]-a[1]).length
-    ?Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,a],i)=>`
+    ?Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,v],i)=>`
       <div class="bar-wrap">
-        <div class="bar-labels"><span>${c}</span><span>${fmtAUD(a)}</span></div>
-        <div class="bar-bg"><div class="bar-fill" style="width:${Math.round(a/maxCat*100)}%;background:${COLORS[i%COLORS.length]}"></div></div>
+        <div class="bar-labels"><span>${c}</span><span>${fmtAUD(v)}</span></div>
+        <div class="bar-bg"><div class="bar-fill" style="width:${Math.round(v/maxCat*100)}%;background:${COLORS[i%COLORS.length]}"></div></div>
       </div>`).join('')
     :'<div class="empty">No expenses in this period</div>';
 
-  // Merge logged transactions + Wise transfers for recent feed
+  // Recent feed: transactions + Wise transfers
   const recentTxs=txs.map(t=>({...t,_kind:'tx'}));
-  const recentTransfers=db.transfers.filter(t=>txInRange(t,start,end)).map(t=>({
+  const recentTransfers=transfersInPeriod.map(t=>({
     _kind:'transfer',id:t.id,date:t.date,
-    name:'Wise Transfer'+(t.purpose?' — '+t.purpose:''),
+    name:'Wise Transfer'+(t.notes?' — '+t.notes:''),
     sub:`Sent ${fmtAUD(t.sent)} · fee ${fmtAUD(t.fee)} · received ${fmtNZD(t.received)}`,
     amount:t.sent
   }));
@@ -1316,15 +1422,12 @@ function openAllocateModal(transferId){
   if(!tr) return;
   allocatingTransferId = transferId;
 
-  // Summary line
   document.getElementById('allocate-transfer-summary').innerHTML =
-    `<strong>${tr.date}</strong> · Sent ${fmtAUD(tr.sent)} · Fee ${fmtAUD(tr.fee)} · Received ${fmtNZD(tr.received)} · Purpose: ${tr.purpose}`;
+    `<strong>${tr.date}</strong> · Received ${fmtNZD(tr.received)} · Rate ${tr.rate||'—'} · Fee ${fmtAUD(tr.fee)} · Total sent ${fmtAUD(tr.sent)}`;
 
-  // Build list of ALL fixed/variable transactions (not income), sorted newest first
-  // Pre-check any that are already linked to this transfer
-  const existing = new Set((tr.linkedExpenses||[]).map(a=>a.txId||a));
+  const existing = new Map((tr.linkedExpenses||[]).map(a=>[(a.txId||a), a]));
   const candidates = [...db.transactions]
-    .filter(t=>t.type!=='income')
+    .filter(t=>t.type!=='income'&&t.type!=='capital')
     .sort((a,b)=>b.date>a.date?1:-1);
 
   const list = document.getElementById('allocate-expense-list');
@@ -1332,38 +1435,47 @@ function openAllocateModal(transferId){
     list.innerHTML='<div class="empty">No expenses logged yet</div>';
   } else {
     list.innerHTML = candidates.map(t=>{
-      const existingAlloc = (tr.linkedExpenses||[]).find(a=>(a.txId||a)===t.id);
-      const existingAmt = existingAlloc&&existingAlloc.audAmount ? existingAlloc.audAmount : '';
-      const isChecked = existing.has(t.id);
-      const currLabel = t.currency==='NZD'?`badge-nzd`:`badge-${t.type}`;
-      return `<div class="allocate-row" id="arow-${t.id}" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:0.5px solid var(--border)">
+      const prev = existing.get(t.id);
+      const isChecked = !!prev;
+      const prevNZD = prev&&prev.nzdAmount ? prev.nzdAmount.toFixed(2) : '';
+      const suggestedNZD = t.currency==='NZD' ? t.amount.toFixed(2) : (t.amount/(tr.rate||db.fx)).toFixed(2);
+      const dispNZD = prevNZD || (isChecked ? suggestedNZD : '');
+      const badgeCls = t.type==='fixed'?'badge-fixed':'badge-var';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:0.5px solid var(--border)">
         <input type="checkbox" data-alloc-id="${t.id}"
           style="width:18px;height:18px;cursor:pointer;flex-shrink:0;accent-color:var(--accent)"
           ${isChecked?'checked':''}>
         <span style="flex:1;min-width:0">
-          <span style="display:block;font-size:14px;font-weight:500">${t.name}</span>
-          <span style="display:block;font-size:12px;color:var(--text3)">${t.date} · ${fmtLocal(t.amount,t.currency)} · <span class="badge ${currLabel}" style="font-size:10px">${t.type}</span></span>
+          <span style="display:block;font-size:14px;font-weight:500">${t.name} <span class="badge ${badgeCls}" style="font-size:10px">${t.type}</span>${t.currency==='NZD'?' <span class="badge badge-nzd" style="font-size:10px">NZD</span>':''}</span>
+          <span style="display:block;font-size:12px;color:var(--text3)">${t.date} · ${fmtLocal(t.amount,t.currency)} · ${t.cat}</span>
         </span>
-        <div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end">
-          <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">AUD amount</label>
-          <input type="number" data-alloc-amt="${t.id}" placeholder="0.00" step="0.01"
-            value="${existingAmt}"
-            style="width:90px;padding:5px 8px;font-size:13px;font-family:inherit;border:0.5px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);color:var(--text)"
+        <div style="display:flex;flex-direction:column;gap:2px;align-items:flex-end;flex-shrink:0">
+          <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">NZD share</label>
+          <input type="number" data-alloc-nzd="${t.id}" placeholder="NZD" step="0.01"
+            value="${dispNZD}"
+            style="width:85px;padding:5px 8px;font-size:13px;font-family:inherit;border:0.5px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);color:var(--text)"
             ${isChecked?'':'disabled'}>
         </div>
       </div>`;
     }).join('');
 
-    // Listeners: checkbox toggles the amount input enabled/disabled and updates totals
     list.querySelectorAll('input[data-alloc-id]').forEach(cb=>{
-      const id = Number(cb.getAttribute('data-alloc-id'));
-      const amtInput = list.querySelector(`input[data-alloc-amt="${id}"]`);
+      const id = cb.getAttribute('data-alloc-id');
+      const nzdInput = list.querySelector(`input[data-alloc-nzd="${id}"]`);
       cb.addEventListener('change',()=>{
-        amtInput.disabled = !cb.checked;
-        if(cb.checked) amtInput.focus();
+        nzdInput.disabled = !cb.checked;
+        if(cb.checked){
+          if(!nzdInput.value){
+            const tx=db.transactions.find(x=>x.id===Number(id));
+            if(tx) nzdInput.value=tx.currency==='NZD'?tx.amount.toFixed(2):(tx.amount/(tr.rate||db.fx)).toFixed(2);
+          }
+          nzdInput.focus();
+        } else {
+          nzdInput.value='';
+        }
         updateAllocateTotals();
       });
-      amtInput.addEventListener('input', updateAllocateTotals);
+      nzdInput.addEventListener('input', updateAllocateTotals);
     });
   }
 
@@ -1374,42 +1486,45 @@ function openAllocateModal(transferId){
 function updateAllocateTotals(){
   const tr = db.transfers.find(t=>t.id===allocatingTransferId);
   if(!tr) return;
-  const checked = [...document.querySelectorAll('input[data-alloc-id]:checked')];
+  const list = document.getElementById('allocate-expense-list');
+  const checked = [...list.querySelectorAll('input[data-alloc-id]:checked')];
   const feeEach = checked.length ? tr.fee / checked.length : 0;
 
-  let totalAUD = 0;
+  let totalNZD = 0;
   checked.forEach(cb=>{
     const id = cb.getAttribute('data-alloc-id');
-    const amt = parseFloat(document.querySelector(`input[data-alloc-amt="${id}"]`).value)||0;
-    totalAUD += amt;
+    totalNZD += parseFloat(list.querySelector(`input[data-alloc-nzd="${id}"]`).value)||0;
   });
+  const totalAUD = totalNZD / (tr.rate||db.fx);
 
   const feeSplit = document.getElementById('allocate-fee-split');
   const totalRow = document.getElementById('allocate-total-row');
 
   if(checked.length){
     feeSplit.style.display='';
-    feeSplit.textContent = `Fee ${fmtAUD(tr.fee)} ÷ ${checked.length} expense${checked.length>1?'s':''} = ${fmtAUD(feeEach)} each`;
+    feeSplit.innerHTML=`Fee ${fmtAUD(tr.fee)} ÷ ${checked.length} expense${checked.length>1?'s':''} = <strong>${fmtAUD(feeEach)}</strong> each · NZD ÷ rate ${tr.rate||db.fx} = AUD`;
     const totalWithFees = totalAUD + tr.fee;
     const diff = tr.sent - totalWithFees;
-    totalRow.innerHTML = `Total allocated: ${fmtAUD(totalAUD)} + fee ${fmtAUD(tr.fee)} = ${fmtAUD(totalWithFees)} · <span class="${Math.abs(diff)<0.01?'green':diff>0?'amber':'red'}">${Math.abs(diff)<0.01?'✓ Matches sent amount':diff>0?'Unallocated: '+fmtAUD(diff):'Over by: '+fmtAUD(-diff)}</span>`;
+    totalRow.innerHTML=`NZD allocated: ${fmtNZD(totalNZD)} of ${fmtNZD(tr.received)} · AUD equiv: ${fmtAUD(totalAUD)} + fee ${fmtAUD(tr.fee)} = ${fmtAUD(totalWithFees)} · <span class="${Math.abs(diff)<0.02?'green':diff>0?'amber':'red'}">${Math.abs(diff)<0.02?'✓ Matches':'Diff: '+fmtAUD(Math.abs(diff))}</span>`;
   } else {
     feeSplit.style.display='none';
-    totalRow.innerHTML = `<span style="color:var(--text3)">Tick expenses above to allocate this transfer (${fmtAUD(tr.sent)} sent)</span>`;
+    totalRow.innerHTML=`<span style="color:var(--text3)">Tick expenses to allocate (${fmtNZD(tr.received)} to distribute)</span>`;
   }
 }
 
 async function saveAllocations(){
   const tr = db.transfers.find(t=>t.id===allocatingTransferId);
   if(!tr) return;
-  const checked = [...document.querySelectorAll('input[data-alloc-id]:checked')];
+  const list = document.getElementById('allocate-expense-list');
+  const checked = [...list.querySelectorAll('input[data-alloc-id]:checked')];
   if(!checked.length){ showToast('Tick at least one expense'); return; }
 
   const feeEach = tr.fee / checked.length;
   const linkedExpenses = checked.map(cb=>{
     const id = Number(cb.getAttribute('data-alloc-id'));
-    const audAmount = parseFloat(document.querySelector(`input[data-alloc-amt="${id}"]`).value)||0;
-    return { txId: id, audAmount, feeShare: feeEach };
+    const nzdAmount = parseFloat(list.querySelector(`input[data-alloc-nzd="${id}"]`).value)||0;
+    const audAmount = nzdAmount / (tr.rate||db.fx);
+    return { txId: id, nzdAmount, audAmount, feeShare: feeEach };
   });
 
   tr.linkedExpenses = linkedExpenses;
@@ -1488,17 +1603,18 @@ function renderTemplateGrid(){
 
 // ── Shared row ────────────────────────────────────────────────────────────────
 function txRow(t,showEdit){
-  const bc=t.type==='income'?'badge-income':t.type==='fixed'?'badge-fixed':'badge-var';
-  const bt=t.type==='income'?'Income':t.type==='fixed'?'Fixed':'Variable';
-  const nzdNote=t.type!=='income'&&t.currency==='NZD'?
+  const bc=t.type==='income'?'badge-income':t.type==='capital'?'badge-capital':t.type==='fixed'?'badge-fixed':'badge-var';
+  const bt=t.type==='income'?'Income':t.type==='capital'?'Capital':t.type==='fixed'?'Fixed':'Variable';
+  const relocTag=t.cat==='Relocation'?` <span class="badge badge-relocation" style="font-size:10px">Relocation</span>`:'';
+  const nzdNote=t.type!=='income'&&t.type!=='capital'&&t.currency==='NZD'?
     ` <span style="font-size:11px;color:var(--text3)">(${fmtAUD(toAUD(t.amount,t.currency))})</span>`:'';
   return `<div class="row">
     <span class="badge ${bc}">${bt}</span>
     <span class="row-main">
-      <div class="row-name">${t.name}${t.notes?' <span style="color:var(--text3);font-weight:400">— '+t.notes+'</span>':''}${nzdNote}</div>
+      <div class="row-name">${t.name}${t.notes?' <span style="color:var(--text3);font-weight:400">— '+t.notes+'</span>':''}${nzdNote}${relocTag}</div>
       <div class="row-sub">${t.cat} · ${t.date}</div>
     </span>
-    <span class="row-amount ${t.type==='income'?'green':''}">${t.type==='income'?'+':''}${fmtLocal(t.amount,t.currency)}</span>
+    <span class="row-amount ${t.type==='income'||t.type==='capital'?'green':''}">${t.type==='income'||t.type==='capital'?'+':''}${fmtLocal(t.amount,t.currency)}</span>
     ${showEdit?`<button class="btn btn-sm" onclick="openEditTx(${t.id})">Edit</button>`:''}
   </div>`;
 }
@@ -1537,6 +1653,7 @@ function initUI(){
   document.getElementById('f-date').value=today();
   document.getElementById('v-date').value=today();
   document.getElementById('i-date').value=today();
+  document.getElementById('k-date').value=today();
   document.getElementById('w-date').value=today();
   document.getElementById('fx-input').value=db.fx;
   updateFXHint();
