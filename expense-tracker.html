@@ -76,6 +76,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .badge-fixed{background:var(--amber-bg);color:var(--amber)}
 .badge-var{background:var(--blue-bg);color:var(--blue)}
 .badge-income{background:var(--green-bg);color:var(--green)}
+.badge-unpaid{background:#fff3cd;color:#856404;border:0.5px solid #ffc107}
 .badge-capital{background:var(--purple-bg);color:var(--purple)}
 .badge-relocation{background:#fde8d8;color:#b85c00}
 .badge-nzd{background:var(--purple-bg);color:var(--purple)}
@@ -230,6 +231,7 @@ input:focus,select:focus{border-color:var(--accent)}
       </div>
     </div>
     <div id="dash-capital-banner" style="display:none;background:var(--purple-bg);border:0.5px solid rgba(91,79,207,.2);border-radius:var(--r-sm);padding:10px 14px;margin-bottom:1rem;font-size:13px;color:var(--purple)"></div>
+    <div id="dash-owed-banner" style="display:none;background:#fff3cd;border:0.5px solid #ffc107;border-radius:var(--r-sm);padding:10px 14px;margin-bottom:1rem;font-size:13px;color:#856404"></div>
     <div class="metrics" id="dash-metrics"></div>
     <div class="card"><div class="card-title">Spending by category</div><div id="dash-cat"></div></div>
     <div class="card"><div class="card-title">Recent transactions</div><div id="dash-recent"></div></div>
@@ -251,11 +253,21 @@ input:focus,select:focus{border-color:var(--accent)}
           <div style="height:0.5px;background:var(--border);margin-bottom:1rem"></div>
           <div class="form-row">
             <div class="form-group"><label>Amount (<span id="f-ccy-label">AUD</span>)</label><input type="number" id="f-amount" placeholder="0.00" step="0.01"></div>
-            <div class="form-group"><label>Date paid</label><input type="date" id="f-date"></div>
+            <div class="form-group"><label>Date</label><input type="date" id="f-date"></div>
           </div>
           <div class="form-group" style="margin-bottom:1rem"><label>Notes (optional)</label><input type="text" id="f-notes" placeholder="e.g. includes late fee"></div>
+          <div class="form-group" style="margin-bottom:1rem">
+            <label style="display:block;margin-bottom:6px">Payment status</label>
+            <div class="seg" style="width:fit-content">
+              <button class="seg-btn active" id="f-paid-yes" onclick="setFixedPaid(true,this)">✓ Paid</button>
+              <button class="seg-btn" id="f-paid-no" onclick="setFixedPaid(false,this)">⏳ Owe / Unpaid</button>
+            </div>
+            <div id="f-owed-note" style="display:none;margin-top:8px;font-size:12px;color:var(--text3)">
+              <input type="text" id="f-owed-to" placeholder="Who do you owe? (e.g. Sarah, credit card)" style="width:100%;padding:6px 8px;font-size:13px;font-family:inherit;border:0.5px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);color:var(--text)">
+            </div>
+          </div>
           <div style="display:flex;gap:8px">
-            <button class="btn btn-primary" onclick="logFixed()">Log payment</button>
+            <button class="btn btn-primary" onclick="logFixed()">Log expense</button>
             <button class="btn btn-ghost" onclick="clearFixedSelection()">Cancel</button>
           </div>
         </div>
@@ -282,6 +294,16 @@ input:focus,select:focus{border-color:var(--accent)}
           <div class="form-group"><label>Date</label><input type="date" id="v-date"></div>
         </div>
         <div class="form-group" style="margin-bottom:1rem"><label>Notes (optional)</label><input type="text" id="v-notes" placeholder="Any detail..."></div>
+        <div class="form-group" style="margin-bottom:1rem">
+          <label style="display:block;margin-bottom:6px">Payment status</label>
+          <div class="seg" style="width:fit-content">
+            <button class="seg-btn active" id="v-paid-yes" onclick="setVariablePaid(true,this)">✓ Paid</button>
+            <button class="seg-btn" id="v-paid-no" onclick="setVariablePaid(false,this)">⏳ Owe / Unpaid</button>
+          </div>
+          <div id="v-owed-note" style="display:none;margin-top:8px">
+            <input type="text" id="v-owed-to" placeholder="Who do you owe? (e.g. Sarah, credit card)" style="width:100%;padding:6px 8px;font-size:13px;font-family:inherit;border:0.5px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);color:var(--text)">
+          </div>
+        </div>
         <button class="btn btn-primary" onclick="logVariable()">Log expense</button>
       </div>
     </div>
@@ -701,9 +723,9 @@ async function ensureSheets(){
       resource:{requests:missing.map(title=>({addSheet:{properties:{title}}}))}
     });
   }
-  const th=await sheetsGet('Transactions!A1:H1');
+  const th=await sheetsGet('Transactions!A1:J1');
   if(!th.length||th[0][0]!=='ID')
-    await sheetsUpdate('Transactions!A1:H1',[['ID','Date','Name','Category','Type','Currency','Amount','Notes']]);
+    await sheetsUpdate('Transactions!A1:J1',[['ID','Date','Name','Category','Type','Currency','Amount','Notes','Paid','OwedTo']]);
   const tph=await sheetsGet('Templates!A1:D1');
   if(!tph.length||tph[0][0]!=='ID')
     await sheetsUpdate('Templates!A1:D1',[['ID','Name','Category','Currency']]);
@@ -783,10 +805,11 @@ function fmtMonth(s){
 // ── Load ──────────────────────────────────────────────────────────────────────
 async function loadAll(){
   document.getElementById('loading-msg').textContent='Reading your data...';
-  const td=await sheetsGet('Transactions!A2:H5000');
+  const td=await sheetsGet('Transactions!A2:J5000');
   db.transactions=td.filter(r=>r[0]&&safeParseDate(r[1])).map(r=>({
     id:Number(r[0]),date:String(r[1]).trim(),name:r[2]||'',cat:r[3]||'',
-    type:r[4]||'variable',currency:r[5]||'AUD',amount:parseFloat(r[6])||0,notes:r[7]||''
+    type:r[4]||'variable',currency:r[5]||'AUD',amount:parseFloat(r[6])||0,notes:r[7]||'',
+    paid:r[8]===''||r[8]===undefined?true:r[8]!=='false',owedTo:r[9]||''
   }));
   const tpd=await sheetsGet('Templates!A2:D200');
   db.templates=tpd.filter(r=>r[0]).map(r=>({
@@ -809,8 +832,8 @@ async function loadAll(){
 async function saveTransactions(){
   setSyncStatus('busy','Saving...');
   try{
-    await sheetsClear('Transactions!A2:H5000');
-    await sheetsAppend('Transactions!A2',db.transactions.map(e=>[e.id,e.date,e.name,e.cat,e.type,e.currency,e.amount,e.notes]));
+    await sheetsClear('Transactions!A2:J5000');
+    await sheetsAppend('Transactions!A2',db.transactions.map(e=>[e.id,e.date,e.name,e.cat,e.type,e.currency,e.amount,e.notes,e.paid===false?'false':'true',e.owedTo||'']));
     setSyncStatus('on','Synced');
     lastFailedSave=null;
     document.getElementById('sync-retry-btn').style.display='none';
@@ -1109,15 +1132,32 @@ function clearFixedSelection(){
   document.getElementById('f-amount').value='';
   document.getElementById('f-notes').value='';
 }
+let fixedPaid = true;
+let variablePaid = true;
+function setFixedPaid(val,btn){
+  fixedPaid=val;
+  document.getElementById('f-paid-yes').classList.toggle('active',val);
+  document.getElementById('f-paid-no').classList.toggle('active',!val);
+  document.getElementById('f-owed-note').style.display=val?'none':'';
+}
+function setVariablePaid(val,btn){
+  variablePaid=val;
+  document.getElementById('v-paid-yes').classList.toggle('active',val);
+  document.getElementById('v-paid-no').classList.toggle('active',!val);
+  document.getElementById('v-owed-note').style.display=val?'none':'';
+}
+
 async function logFixed(){
   if(!selectedTpl){showToast('Select a template first');return;}
   const amt=parseFloat(document.getElementById('f-amount').value);
   const date=document.getElementById('f-date').value||today();
   const notes=document.getElementById('f-notes').value.trim();
+  const owedTo=!fixedPaid?document.getElementById('f-owed-to').value.trim():'';
   if(!amt){showToast('Enter an amount');return;}
-  db.transactions.push({id:db.nextId++,date,name:selectedTpl.name,cat:selectedTpl.cat,type:'fixed',currency:selectedTpl.currency,amount:amt,notes});
+  db.transactions.push({id:db.nextId++,date,name:selectedTpl.name,cat:selectedTpl.cat,type:'fixed',currency:selectedTpl.currency,amount:amt,notes,paid:fixedPaid,owedTo});
   clearFixedSelection();
-  renderAll(); await saveTransactions(); showToast('Payment logged');
+  fixedPaid=true;
+  renderAll(); await saveTransactions(); showToast(fixedPaid?'Payment logged':'Expense logged as unpaid');
 }
 async function logVariable(){
   const name=document.getElementById('v-name').value.trim();
@@ -1126,12 +1166,16 @@ async function logVariable(){
   const amt=parseFloat(document.getElementById('v-amount').value);
   const date=document.getElementById('v-date').value||today();
   const notes=document.getElementById('v-notes').value.trim();
+  const owedTo=!variablePaid?document.getElementById('v-owed-to').value.trim():'';
   if(!name||!amt){showToast('Fill in name and amount');return;}
-  db.transactions.push({id:db.nextId++,date,name,cat,type:'variable',currency,amount:amt,notes});
+  db.transactions.push({id:db.nextId++,date,name,cat,type:'variable',currency,amount:amt,notes,paid:variablePaid,owedTo});
   document.getElementById('v-name').value='';
   document.getElementById('v-amount').value='';
   document.getElementById('v-notes').value='';
-  renderAll(); await saveTransactions(); showToast('Expense logged');
+  document.getElementById('v-owed-to').value='';
+  variablePaid=true;
+  setVariablePaid(true,null);
+  renderAll(); await saveTransactions(); showToast(variablePaid?'Expense logged':'Expense logged as unpaid');
 }
 async function logIncome(){
   const amt=parseFloat(document.getElementById('i-amount').value);
@@ -1224,6 +1268,20 @@ function renderDashboard(){
     capitalBanner.innerHTML=`<strong>Capital injection this period: ${fmtAUD(capital)}</strong> — NZ savings moved to AUS, not counted as income`;
   } else {
     capitalBanner.style.display='none';
+  }
+
+  // Owed / unpaid summary — all time, always visible if any
+  const unpaid=db.transactions.filter(t=>t.paid===false&&t.type!=='income'&&t.type!=='capital');
+  const owedBanner=document.getElementById('dash-owed-banner');
+  if(unpaid.length){
+    const totalOwed=unpaid.reduce((s,t)=>s+toAUD(t.amount,t.currency),0);
+    const grouped={};
+    unpaid.forEach(t=>{const k=t.owedTo||'Unspecified';grouped[k]=(grouped[k]||0)+toAUD(t.amount,t.currency);});
+    const breakdown=Object.entries(grouped).map(([k,v])=>`${k}: ${fmtAUD(v)}`).join(' · ');
+    owedBanner.style.display='';
+    owedBanner.innerHTML=`<strong>⏳ Unpaid / Owed: ${fmtAUD(totalOwed)}</strong> · ${breakdown}`;
+  } else {
+    owedBanner.style.display='none';
   }
 
   const income=txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
@@ -1341,6 +1399,25 @@ function renderHistory(){
 }
 
 // ── Render: Reports ───────────────────────────────────────────────────────────
+function getWiseByMonth(monthKey){
+  // Returns {wise: AUD, cats: {cat: AUD}} for a given YYYY-MM month key
+  let wise=0; const cats={};
+  db.transfers.filter(t=>t.date&&t.date.slice(0,7)===monthKey).forEach(tr=>{
+    const allocs=(tr.linkedExpenses||[]).filter(a=>a.templateId);
+    if(allocs.length){
+      allocs.forEach(a=>{
+        const audAmt=(a.audAmount||0)+(a.feeShare||0);
+        cats[a.cat||'Transfer']=(cats[a.cat||'Transfer']||0)+audAmt;
+        wise+=audAmt;
+      });
+    } else {
+      cats['Transfer']=(cats['Transfer']||0)+(tr.sent||0);
+      wise+=(tr.sent||0);
+    }
+  });
+  return {wise,cats};
+}
+
 function renderReports(){
   const n=parseInt(document.getElementById('trend-months').value)||12;
   const now=new Date();
@@ -1350,64 +1427,86 @@ function renderReports(){
     months.push(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));
   }
   const byMonth={};
-  months.forEach(m=>{byMonth[m]={income:0,fixed:0,variable:0};});
+  months.forEach(m=>{byMonth[m]={income:0,fixed:0,variable:0,wise:0};});
   db.transactions.forEach(t=>{
     const m=t.date.slice(0,7);
     if(!byMonth[m])return;
     if(t.type==='income') byMonth[m].income+=t.amount;
     else if(t.type==='fixed') byMonth[m].fixed+=toAUD(t.amount,t.currency);
-    else byMonth[m].variable+=toAUD(t.amount,t.currency);
+    else if(t.type==='variable') byMonth[m].variable+=toAUD(t.amount,t.currency);
+    // capital excluded from expense totals
   });
-  const maxVal=Math.max(...months.map(m=>Math.max(byMonth[m].income,byMonth[m].fixed+byMonth[m].variable)),1);
+  // Add Wise transfers per month
+  months.forEach(m=>{
+    byMonth[m].wise=getWiseByMonth(m).wise;
+  });
+
+  const maxVal=Math.max(...months.map(m=>Math.max(byMonth[m].income,byMonth[m].fixed+byMonth[m].variable+byMonth[m].wise)),1);
   document.getElementById('trend-chart').innerHTML=months.map(m=>{
     const d=byMonth[m];
     const incH=Math.round((d.income/maxVal)*100);
     const fixH=Math.round((d.fixed/maxVal)*100);
     const varH=Math.round((d.variable/maxVal)*100);
+    const wisH=Math.round((d.wise/maxVal)*100);
     return `<div class="trend-col">
       <div class="trend-bar-wrap">
         <div class="trend-bar" style="height:${incH}px;background:var(--green);opacity:.3"></div>
         <div class="trend-bar" style="height:${fixH}px;background:var(--red)"></div>
         <div class="trend-bar" style="height:${varH}px;background:var(--blue)"></div>
+        <div class="trend-bar" style="height:${wisH}px;background:var(--teal)"></div>
       </div>
       <div class="trend-label">${fmtMonth(m).split(' ')[0]}</div>
     </div>`;
   }).join('');
+
   const ytdKey=now.getFullYear()+'-';
   const ytdMonths=months.filter(m=>m.startsWith(ytdKey));
   const ytdIncome=ytdMonths.reduce((s,m)=>s+byMonth[m].income,0);
   const ytdFixed=ytdMonths.reduce((s,m)=>s+byMonth[m].fixed,0);
   const ytdVar=ytdMonths.reduce((s,m)=>s+byMonth[m].variable,0);
-  const ytdNet=ytdIncome-ytdFixed-ytdVar;
+  const ytdWise=ytdMonths.reduce((s,m)=>s+byMonth[m].wise,0);
+  const ytdExpenses=ytdFixed+ytdVar+ytdWise;
+  const ytdNet=ytdIncome-ytdExpenses;
   document.getElementById('report-ytd').innerHTML=`
     <div class="metric"><div class="metric-label">YTD income</div><div class="metric-value purple">${fmtAUD(ytdIncome)}</div></div>
-    <div class="metric"><div class="metric-label">YTD expenses</div><div class="metric-value">${fmtAUD(ytdFixed+ytdVar)}</div></div>
+    <div class="metric"><div class="metric-label">YTD expenses</div><div class="metric-value">${fmtAUD(ytdExpenses)}<div class="metric-sub">${ytdWise>0?'incl. '+fmtAUD(ytdWise)+' Wise':''}</div></div></div>
     <div class="metric"><div class="metric-label">YTD net</div><div class="metric-value ${ytdNet>=0?'green':'red'}">${fmtAUD(ytdNet)}</div></div>`;
+
+  // Category breakdown — merge tx cats + wise allocated cats
   const cats={};
-  db.transactions.filter(t=>t.date.startsWith(now.getFullYear().toString())&&t.type!=='income')
+  db.transactions.filter(t=>t.date.startsWith(now.getFullYear().toString())&&t.type!=='income'&&t.type!=='capital')
     .forEach(t=>{cats[t.cat]=(cats[t.cat]||0)+toAUD(t.amount,t.currency);});
+  const ytdWiseCats={};
+  ytdMonths.forEach(m=>{
+    const wm=getWiseByMonth(m);
+    Object.entries(wm.cats).forEach(([c,v])=>{ytdWiseCats[c]=(ytdWiseCats[c]||0)+v;});
+  });
+  Object.entries(ytdWiseCats).forEach(([c,v])=>{cats[c]=(cats[c]||0)+v;});
   const maxCat=Math.max(...Object.values(cats),1);
   document.getElementById('report-cat').innerHTML=Object.entries(cats).sort((a,b)=>b[1]-a[1])
-    .map(([c,a],i)=>`
+    .map(([c,v],i)=>`
       <div class="bar-wrap">
-        <div class="bar-labels"><span>${c}</span><span>${fmtAUD(a)}</span></div>
-        <div class="bar-bg"><div class="bar-fill" style="width:${Math.round(a/maxCat*100)}%;background:${COLORS[i%COLORS.length]}"></div></div>
+        <div class="bar-labels"><span>${c}</span><span>${fmtAUD(v)}</span></div>
+        <div class="bar-bg"><div class="bar-fill" style="width:${Math.round(v/maxCat*100)}%;background:${COLORS[i%COLORS.length]}"></div></div>
       </div>`).join('')||'<div class="empty">No expense data yet</div>';
+
   document.getElementById('report-table').innerHTML=`<div style="overflow-x:auto"><table style="width:100%;font-size:13px;border-collapse:collapse">
     <thead><tr style="color:var(--text3);font-size:11px;text-transform:uppercase;letter-spacing:.4px">
       <td style="padding:6px 0;font-weight:600">Month</td>
       <td style="padding:6px 0;font-weight:600;text-align:right">Income</td>
       <td style="padding:6px 0;font-weight:600;text-align:right">Fixed</td>
       <td style="padding:6px 0;font-weight:600;text-align:right">Variable</td>
+      <td style="padding:6px 0;font-weight:600;text-align:right;color:var(--teal)">Wise</td>
       <td style="padding:6px 0;font-weight:600;text-align:right">Net</td>
     </tr></thead><tbody>
     ${[...months].reverse().map(m=>{
-      const d=byMonth[m],net=d.income-d.fixed-d.variable;
+      const d=byMonth[m],net=d.income-d.fixed-d.variable-d.wise;
       return `<tr style="border-top:0.5px solid var(--border)">
         <td style="padding:8px 0;font-weight:500">${fmtMonth(m)}</td>
         <td style="padding:8px 0;text-align:right;font-family:'DM Mono',monospace;color:var(--green)">${d.income?fmtAUD(d.income):'—'}</td>
-        <td style="padding:8px 0;text-align:right;font-family:'DM Mono',monospace">${fmtAUD(d.fixed)}</td>
-        <td style="padding:8px 0;text-align:right;font-family:'DM Mono',monospace">${fmtAUD(d.variable)}</td>
+        <td style="padding:8px 0;text-align:right;font-family:'DM Mono',monospace">${d.fixed?fmtAUD(d.fixed):'—'}</td>
+        <td style="padding:8px 0;text-align:right;font-family:'DM Mono',monospace">${d.variable?fmtAUD(d.variable):'—'}</td>
+        <td style="padding:8px 0;text-align:right;font-family:'DM Mono',monospace;color:var(--teal)">${d.wise?fmtAUD(d.wise):'—'}</td>
         <td style="padding:8px 0;text-align:right;font-family:'DM Mono',monospace;color:${net>=0?'var(--green)':'var(--red)'}">${d.income?fmtAUD(net):'—'}</td>
       </tr>`;}).join('')}
     </tbody></table></div>`;
@@ -1609,12 +1708,13 @@ function txRow(t,showEdit){
   const bc=t.type==='income'?'badge-income':t.type==='capital'?'badge-capital':t.type==='fixed'?'badge-fixed':'badge-var';
   const bt=t.type==='income'?'Income':t.type==='capital'?'Capital':t.type==='fixed'?'Fixed':'Variable';
   const relocTag=t.cat==='Relocation'?` <span class="badge badge-relocation" style="font-size:10px">Relocation</span>`:'';
+  const unpaidTag=t.paid===false?` <span class="badge badge-unpaid" style="font-size:10px">⏳ Unpaid${t.owedTo?' → '+t.owedTo:''}</span>`:'';
   const nzdNote=t.type!=='income'&&t.type!=='capital'&&t.currency==='NZD'?
     ` <span style="font-size:11px;color:var(--text3)">(${fmtAUD(toAUD(t.amount,t.currency))})</span>`:'';
   return `<div class="row">
     <span class="badge ${bc}">${bt}</span>
     <span class="row-main">
-      <div class="row-name">${t.name}${t.notes?' <span style="color:var(--text3);font-weight:400">— '+t.notes+'</span>':''}${nzdNote}${relocTag}</div>
+      <div class="row-name">${t.name}${t.notes?' <span style="color:var(--text3);font-weight:400">— '+t.notes+'</span>':''}${nzdNote}${relocTag}${unpaidTag}</div>
       <div class="row-sub">${t.cat} · ${t.date}</div>
     </span>
     <span class="row-amount ${t.type==='income'||t.type==='capital'?'green':''}">${t.type==='income'||t.type==='capital'?'+':''}${fmtLocal(t.amount,t.currency)}</span>
